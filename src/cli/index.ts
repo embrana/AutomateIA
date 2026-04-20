@@ -23,7 +23,13 @@ import {
   pause as pauseTimer,
   purpose as startTimerSession,
   resume as resumeTimer,
+  startManualHumanTimer,
   status as timerStatus,
+  switchBlock as switchTimerBlock,
+  switchToAutomaticBlock,
+  switchToDefaultHumanWork,
+  validateTimerActorMode,
+  validateTimerWorkKind,
 } from '../core/timer/commands.js';
 import { buildBlockedArchiveComment } from '../core/timer/archive-comment.js';
 import { getActiveSession as getActiveTimerSession } from '../core/timer/store.js';
@@ -300,11 +306,89 @@ const timerCmd = program
   .description('Manage the OpenSpec work timer');
 
 timerCmd
+  .command('start')
+  .description('Start a manual human timer for a Jira issue')
+  .requiredOption('--jira <issue-key>', 'Jira issue key to track work against')
+  .option('--kind <kind>', 'Work kind: implementation, spec, review, bugfix, rework, testing, other', 'implementation')
+  .option('--description <text>', 'Description for this manual human block')
+  .option('--import-ticket', 'Import Jira ticket context into the timer session')
+  .action(async (options: { jira: string; kind: string; description?: string; importTicket?: boolean }) => {
+    try {
+      await startManualHumanTimer(options.jira, {
+        kind: validateTimerWorkKind(options.kind),
+        description: options.description,
+        importTicket: options.importTicket,
+      });
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+timerCmd
   .command('status')
   .description('Show the active OpenSpec work timer')
-  .action(async () => {
+  .option('--blocks', 'Show closed granular time blocks')
+  .action(async (options: { blocks?: boolean }) => {
     try {
-      await timerStatus();
+      await timerStatus({ blocks: options.blocks });
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+timerCmd
+  .command('switch')
+  .description('Switch the active OpenSpec timer to a different work block')
+  .requiredOption('--mode <mode>', 'Actor mode: human, ai_autonomous, human_agent_interaction')
+  .requiredOption('--kind <kind>', 'Work kind: implementation, spec, review, bugfix, rework, testing, other')
+  .option('--description <text>', 'Description for this block')
+  .action(async (options: { mode: string; kind: string; description?: string }) => {
+    try {
+      await switchTimerBlock({
+        mode: validateTimerActorMode(options.mode),
+        kind: validateTimerWorkKind(options.kind),
+        description: options.description,
+      });
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+timerCmd
+  .command('bugfix')
+  .description('Switch the active session to human bugfix work, or start one with --jira')
+  .option('--jira <issue-key>', 'Jira issue key used when no timer session is active')
+  .option('--description <text>', 'Bugfix block description', 'Fix implementation or OpenSpec validation issues')
+  .action(async (options: { jira?: string; description?: string }) => {
+    try {
+      const timerSession = await getActiveTimerSession();
+      if (timerSession?.status === 'running') {
+        await switchTimerBlock({
+          mode: 'human',
+          kind: 'bugfix',
+          description: options.description,
+        });
+        return;
+      }
+
+      if (timerSession?.status === 'paused') {
+        throw new Error("OpenSpec session is paused.\nUse 'openspec timer resume' before switching to bugfix work.");
+      }
+
+      if (!options.jira) {
+        throw new Error("No active OpenSpec session found.\nUse 'openspec timer bugfix --jira PROJ-123 --description \"Fix validation errors\"' to start a manual bugfix timer.");
+      }
+
+      await startManualHumanTimer(options.jira, {
+        kind: 'bugfix',
+        description: options.description,
+      });
     } catch (error) {
       console.log();
       ora().fail(`Error: ${(error as Error).message}`);
@@ -360,11 +444,20 @@ program
   .option('--comment <text>', 'Comment for the Jira worklog')
   .option('--retry', 'Retry a pending Jira worklog sync')
   .action(async (changeName?: string, options?: { yes?: boolean; skipSpecs?: boolean; noValidate?: boolean; validate?: boolean; comment?: string; retry?: boolean }) => {
+    let archiveAutoBlockStarted = false;
     try {
       const timerSession = await getActiveTimerSession();
       if (options?.retry || timerSession?.status === 'sync_pending' || (timerSession && !changeName)) {
         await archiveTimer({ comment: options?.comment, retry: options?.retry });
         return;
+      }
+
+      if (timerSession && changeName) {
+        archiveAutoBlockStarted = await switchToAutomaticBlock(
+          'ai_autonomous',
+          'review',
+          'OpenSpec archive validation and spec application'
+        );
       }
 
       const archiveCommand = new ArchiveCommand();
@@ -388,6 +481,7 @@ program
           } catch (commentError) {
             console.log(`Warning: OpenSpec archive was blocked, and Jira comment could not be added: ${(commentError as Error).message}`);
           }
+          console.log(`Suggested next step: openspec-jira timer bugfix --jira ${timerSession.jira_issue_key} --description "Fix OpenSpec archive validation errors"`);
         }
         return;
       }
@@ -396,6 +490,15 @@ program
         await archiveTimer({ comment: options?.comment });
       }
     } catch (error) {
+      if (archiveAutoBlockStarted) {
+        try {
+          await switchToAutomaticBlock('human', 'bugfix', 'Fix failed OpenSpec archive command');
+          console.log('Timer switched to human / bugfix.');
+          console.log('Suggested command: openspec-jira timer bugfix --description "Fix failed OpenSpec archive command"');
+        } catch {
+          // Keep the original archive error visible.
+        }
+      }
       console.log(); // Empty line for spacing
       ora().fail(`Error: ${(error as Error).message}`);
       process.exit(1);
@@ -619,9 +722,32 @@ newCmd
   .option('--schema <name>', `Workflow schema to use (default: ${DEFAULT_SCHEMA})`)
   .option('--from-ticket <issue-key>', 'Create a change from a Jira ticket')
   .action(async (name: string, options: NewChangeOptions) => {
+    let newChangeAutoBlockStarted = false;
     try {
+      const timerSession = await getActiveTimerSession();
+      if (timerSession?.status === 'running') {
+        newChangeAutoBlockStarted = await switchToAutomaticBlock(
+          'ai_autonomous',
+          'spec',
+          options.fromTicket
+            ? 'OpenSpec generated change artifacts from Jira ticket'
+            : 'OpenSpec generated change scaffold'
+        );
+      }
       await newChangeCommand(name, options);
+      if (newChangeAutoBlockStarted) {
+        await switchToDefaultHumanWork();
+      }
     } catch (error) {
+      if (newChangeAutoBlockStarted) {
+        try {
+          await switchToAutomaticBlock('human', 'bugfix', 'Fix failed OpenSpec change generation');
+          console.log('Timer switched to human / bugfix.');
+          console.log('Suggested command: openspec-jira timer bugfix --description "Fix failed OpenSpec change generation"');
+        } catch {
+          // Keep the original new change error visible.
+        }
+      }
       console.log();
       ora().fail(`Error: ${(error as Error).message}`);
       process.exit(1);

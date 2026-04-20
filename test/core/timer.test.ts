@@ -3,7 +3,15 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
 import { saveGlobalConfig } from '../../src/core/global-config.js';
-import { archiveTimer, pause, purpose, resume, validateIssueKey } from '../../src/core/timer/commands.js';
+import {
+  archiveTimer,
+  pause,
+  purpose,
+  resume,
+  startManualHumanTimer,
+  switchBlock,
+  validateIssueKey,
+} from '../../src/core/timer/commands.js';
 import { getActiveSession, getSessionsDir } from '../../src/core/timer/store.js';
 import { newChangeCommand } from '../../src/commands/workflow/new-change.js';
 
@@ -355,31 +363,17 @@ Permitir al Director Técnico ingresar y guardar su información general de perf
     const postCall = fetchSpy.mock.calls[1];
     expect(postCall[0]).toBe('https://example.atlassian.net/rest/api/3/issue/PROJ-123/worklog');
     const payload = JSON.parse((postCall[1] as RequestInit).body as string);
-    expect(payload).toMatchObject({
-      timeSpentSeconds: 5160,
-      comment: {
-        type: 'doc',
-        version: 1,
-        content: [
-          {
-            type: 'paragraph',
-            content: [
-              {
-                type: 'text',
-                text: 'OpenSpec implementation session',
-              },
-            ],
-          },
-        ],
-      },
-    });
+    expect(payload.timeSpentSeconds).toBe(5160);
+    expect(JSON.stringify(payload.comment)).toContain('OpenSpec: Human work');
+    expect(JSON.stringify(payload.comment)).toContain('Kind: implementation');
+    expect(JSON.stringify(payload.comment)).toContain('Archive comment: OpenSpec implementation session');
     expect(payload.started).toMatch(/^2026-04-19T\d{2}:03:11\.000[+-]\d{4}$/);
 
     const commentCall = fetchSpy.mock.calls[2];
     expect(commentCall[0]).toBe('https://example.atlassian.net/rest/api/3/issue/PROJ-123/comment');
     const commentPayload = JSON.parse((commentCall[1] as RequestInit).body as string);
     expect(JSON.stringify(commentPayload)).toContain('OpenSpec archive completed.');
-    expect(JSON.stringify(commentPayload)).toContain('Jira worklog: 123456');
+    expect(JSON.stringify(commentPayload)).toContain('Jira worklogs: 123456');
 
     const sessions = await fs.readdir(getSessionsDir());
     expect(sessions).toHaveLength(1);
@@ -392,9 +386,125 @@ Permitir al Director Técnico ingresar y guardar su información general de perf
       rounded_duration_seconds: 5160,
       worklog_status: 'synced',
       jira_worklog_id: '123456',
+      jira_worklogs: [
+        expect.objectContaining({
+          actor_mode: 'human',
+          work_kind: 'implementation',
+          rounded_duration_seconds: 5160,
+          jira_worklog_id: '123456',
+        }),
+      ],
       comment: 'OpenSpec implementation session',
       status: 'closed',
     });
+  });
+
+  it('creates separate Jira worklogs for granular switched timer blocks', async () => {
+    vi.setSystemTime(new Date('2026-04-19T17:00:00.000Z'));
+    fetchSpy
+      .mockResolvedValueOnce(jsonResponse({ key: 'PROJ-123' }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'human-1' }, { status: 201 }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'ai-1' }, { status: 201 }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'interaction-1' }, { status: 201 }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'comment-1' }, { status: 201 }));
+
+    await purpose('PROJ-123');
+
+    vi.setSystemTime(new Date('2026-04-19T17:10:00.000Z'));
+    await switchBlock({
+      mode: 'ai_autonomous',
+      kind: 'spec',
+      description: 'Agent generated OpenSpec deltas',
+    });
+
+    vi.setSystemTime(new Date('2026-04-19T17:25:00.000Z'));
+    await switchBlock({
+      mode: 'human_agent_interaction',
+      kind: 'review',
+      description: 'Developer reviewed agent output',
+    });
+
+    vi.setSystemTime(new Date('2026-04-19T17:40:00.000Z'));
+    await archiveTimer({ comment: 'Granular session' });
+
+    const worklogPayloads = fetchSpy.mock.calls
+      .filter((call) => String(call[0]).endsWith('/worklog'))
+      .map((call) => JSON.parse((call[1] as RequestInit).body as string));
+
+    expect(worklogPayloads).toHaveLength(3);
+    expect(worklogPayloads.map((payload) => payload.timeSpentSeconds)).toEqual([600, 900, 900]);
+    expect(JSON.stringify(worklogPayloads[0].comment)).toContain('OpenSpec: Human work');
+    expect(JSON.stringify(worklogPayloads[1].comment)).toContain('OpenSpec: AI autonomous work');
+    expect(JSON.stringify(worklogPayloads[1].comment)).toContain('Agent generated OpenSpec deltas');
+    expect(JSON.stringify(worklogPayloads[2].comment)).toContain('OpenSpec: Human-agent interaction');
+
+    const sessions = await fs.readdir(getSessionsDir());
+    const archived = JSON.parse(
+      await fs.readFile(path.join(getSessionsDir(), sessions[0]), 'utf-8')
+    );
+    expect(archived.jira_worklogs).toEqual([
+      expect.objectContaining({
+        actor_mode: 'human',
+        work_kind: 'implementation',
+        jira_worklog_id: 'human-1',
+      }),
+      expect.objectContaining({
+        actor_mode: 'ai_autonomous',
+        work_kind: 'spec',
+        jira_worklog_id: 'ai-1',
+      }),
+      expect.objectContaining({
+        actor_mode: 'human_agent_interaction',
+        work_kind: 'review',
+        jira_worklog_id: 'interaction-1',
+      }),
+    ]);
+  });
+
+  it('starts a manual human bugfix timer outside the purpose/archive lifecycle', async () => {
+    vi.setSystemTime(new Date('2026-04-19T17:00:00.000Z'));
+    fetchSpy
+      .mockResolvedValueOnce(jsonResponse({ key: 'PROJ-123' }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'manual-bugfix-1' }, { status: 201 }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'comment-1' }, { status: 201 }));
+
+    await startManualHumanTimer('PROJ-123', {
+      kind: 'bugfix',
+      description: 'Fix production validation issue',
+    });
+
+    const active = await getActiveSession();
+    expect(active).toMatchObject({
+      jira_issue_key: 'PROJ-123',
+      command: 'timer_start',
+      current_block: expect.objectContaining({
+        actor_mode: 'human',
+        work_kind: 'bugfix',
+        description: 'Fix production validation issue',
+        source: 'manual',
+      }),
+    });
+
+    vi.setSystemTime(new Date('2026-04-19T17:12:00.000Z'));
+    await archiveTimer({ comment: 'Manual bugfix after archive' });
+
+    const payload = JSON.parse((fetchSpy.mock.calls[1][1] as RequestInit).body as string);
+    expect(payload.timeSpentSeconds).toBe(720);
+    expect(JSON.stringify(payload.comment)).toContain('OpenSpec: Human work');
+    expect(JSON.stringify(payload.comment)).toContain('Kind: bugfix');
+    expect(JSON.stringify(payload.comment)).toContain('Fix production validation issue');
+
+    const sessions = await fs.readdir(getSessionsDir());
+    const archived = JSON.parse(
+      await fs.readFile(path.join(getSessionsDir(), sessions[0]), 'utf-8')
+    );
+    expect(archived.jira_worklogs).toEqual([
+      expect.objectContaining({
+        actor_mode: 'human',
+        work_kind: 'bugfix',
+        jira_worklog_id: 'manual-bugfix-1',
+      }),
+    ]);
   });
 
   it('pauses and resumes a timer session, excluding paused time from the worklog', async () => {

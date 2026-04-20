@@ -17,10 +17,39 @@ import {
 import { JiraClient, resolveJiraConfig } from './jira-client.js';
 import { createChangeFromTicket, fetchImportedJiraTicket } from './ticket-change.js';
 import { buildAdfComment, buildWorklogPayload } from './worklog-payload.js';
-import type { ImportedJiraTicket, TimerSession, WorklogConfig, WorklogRoundingMode } from './types.js';
+import type {
+  ImportedJiraTicket,
+  JiraWorklogSyncResult,
+  TimerActorMode,
+  TimerBlock,
+  TimerBlockSource,
+  TimerSession,
+  TimerWorkKind,
+  WorklogConfig,
+} from './types.js';
 
 const ISSUE_KEY_PATTERN = /^[A-Z][A-Z0-9_]+-\d+$/;
 const DEFAULT_COMMENT = 'OpenSpec execution session';
+const DEFAULT_HUMAN_DESCRIPTION = 'Developer implementation work';
+
+const ACTOR_MODE_LABELS: Record<TimerActorMode, string> = {
+  human: 'Human work',
+  ai_autonomous: 'AI autonomous work',
+  human_agent_interaction: 'Human-agent interaction',
+};
+
+const WORK_KIND_LABELS: Record<TimerWorkKind, string> = {
+  implementation: 'implementation',
+  spec: 'spec',
+  review: 'review',
+  bugfix: 'bugfix',
+  rework: 'rework',
+  testing: 'testing',
+  other: 'other',
+};
+
+const ACTOR_MODES = new Set<TimerActorMode>(['human', 'ai_autonomous', 'human_agent_interaction']);
+const WORK_KINDS = new Set<TimerWorkKind>(['implementation', 'spec', 'review', 'bugfix', 'rework', 'testing', 'other']);
 
 export interface ArchiveTimerOptions {
   comment?: string;
@@ -31,6 +60,31 @@ export interface ArchiveTimerOptions {
 export interface PurposeOptions {
   importTicket?: boolean;
   createChange?: boolean;
+}
+
+export interface StartManualHumanTimerOptions {
+  kind?: TimerWorkKind;
+  description?: string;
+  importTicket?: boolean;
+}
+
+export interface SwitchBlockOptions {
+  mode: TimerActorMode;
+  kind: TimerWorkKind;
+  description?: string;
+  source?: TimerBlockSource;
+}
+
+interface WorklogGroup {
+  block_key: string;
+  actor_mode: TimerActorMode;
+  work_kind: TimerWorkKind;
+  description: string;
+  started_at: string;
+  started_at_local: string;
+  raw_duration_seconds: number;
+  rounded_duration_seconds: number;
+  block_ids: string[];
 }
 
 export function validateIssueKey(issueKey: string): void {
@@ -53,16 +107,275 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-async function syncWorklog(session: TimerSession, comment: string): Promise<Record<string, unknown>> {
+function assertActorMode(value: string): asserts value is TimerActorMode {
+  if (!ACTOR_MODES.has(value as TimerActorMode)) {
+    throw new Error(`Invalid timer actor mode: ${value}. Expected one of: ${Array.from(ACTOR_MODES).join(', ')}`);
+  }
+}
+
+function assertWorkKind(value: string): asserts value is TimerWorkKind {
+  if (!WORK_KINDS.has(value as TimerWorkKind)) {
+    throw new Error(`Invalid timer work kind: ${value}. Expected one of: ${Array.from(WORK_KINDS).join(', ')}`);
+  }
+}
+
+export function validateTimerActorMode(value: string): TimerActorMode {
+  assertActorMode(value);
+  return value;
+}
+
+export function validateTimerWorkKind(value: string): TimerWorkKind {
+  assertWorkKind(value);
+  return value;
+}
+
+function createBlock(
+  started: Date,
+  actorMode: TimerActorMode,
+  workKind: TimerWorkKind,
+  description: string,
+  source: TimerBlockSource
+): TimerBlock {
+  return {
+    block_id: randomUUID(),
+    actor_mode: actorMode,
+    work_kind: workKind,
+    description,
+    source,
+    started_at: toUtcIso(started),
+    started_at_local: toLocalIso(started),
+  };
+}
+
+function closeCurrentBlock(session: TimerSession, ended: Date): TimerSession {
+  if (!session.current_block) {
+    return session;
+  }
+
+  const rawDuration = secondsBetween(session.current_block.started_at, ended);
+  const closedBlock: TimerBlock = {
+    ...session.current_block,
+    ended_at: toUtcIso(ended),
+    ended_at_local: toLocalIso(ended),
+    raw_duration_seconds: rawDuration,
+  };
+
+  return {
+    ...session,
+    current_block: undefined,
+    blocks: rawDuration > 0
+      ? [...(session.blocks ?? []), closedBlock]
+      : session.blocks ?? [],
+  };
+}
+
+function startBlock(
+  session: TimerSession,
+  started: Date,
+  actorMode: TimerActorMode,
+  workKind: TimerWorkKind,
+  description: string,
+  source: TimerBlockSource
+): TimerSession {
+  return {
+    ...closeCurrentBlock(session, started),
+    current_block: createBlock(started, actorMode, workKind, description, source),
+  };
+}
+
+function startDefaultHumanBlock(session: TimerSession, started: Date): TimerSession {
+  return startBlock(
+    session,
+    started,
+    'human',
+    'implementation',
+    DEFAULT_HUMAN_DESCRIPTION,
+    'auto'
+  );
+}
+
+function getLastClosedBlock(session: TimerSession): TimerBlock | undefined {
+  const blocks = session.blocks ?? [];
+  return blocks[blocks.length - 1];
+}
+
+function getResumeBlockTemplate(session: TimerSession): Pick<TimerBlock, 'actor_mode' | 'work_kind' | 'description' | 'source'> {
+  const previous = getLastClosedBlock(session);
+  if (previous) {
+    return {
+      actor_mode: previous.actor_mode,
+      work_kind: previous.work_kind,
+      description: previous.description,
+      source: previous.source,
+    };
+  }
+
+  return {
+    actor_mode: 'human',
+    work_kind: 'implementation',
+    description: DEFAULT_HUMAN_DESCRIPTION,
+    source: 'auto',
+  };
+}
+
+function buildBlockKey(block: Pick<TimerBlock, 'actor_mode' | 'work_kind' | 'description'>): string {
+  return [
+    block.actor_mode,
+    block.work_kind,
+    block.description.trim().toLowerCase(),
+  ].join('|');
+}
+
+function buildWorklogComment(
+  session: TimerSession,
+  group: WorklogGroup,
+  archiveComment: string
+): string {
+  const lines = [
+    `OpenSpec: ${ACTOR_MODE_LABELS[group.actor_mode]}`,
+    `Kind: ${WORK_KIND_LABELS[group.work_kind]}`,
+    `Description: ${group.description}`,
+    `Issue: ${session.jira_issue_key}`,
+    session.openspec_change?.name ? `Change: ${session.openspec_change.name}` : undefined,
+    `Session: ${session.session_id}`,
+    archiveComment ? `Archive comment: ${archiveComment}` : undefined,
+  ].filter((line): line is string => Boolean(line));
+
+  return lines.join('\n');
+}
+
+function buildWorklogGroups(
+  session: TimerSession,
+  worklogConfig: Required<WorklogConfig>
+): WorklogGroup[] {
+  const sourceBlocks = (session.blocks ?? []).filter((block) => (block.raw_duration_seconds ?? 0) > 0);
+
+  if (sourceBlocks.length === 0 && session.raw_duration_seconds !== undefined) {
+    const rawSeconds = session.raw_duration_seconds ?? 0;
+    return [{
+      block_key: 'legacy|human|implementation',
+      actor_mode: 'human',
+      work_kind: 'implementation',
+      description: session.comment ?? worklogConfig.comment_template,
+      started_at: session.started_at,
+      started_at_local: session.started_at_local,
+      raw_duration_seconds: rawSeconds,
+      rounded_duration_seconds: roundSeconds(rawSeconds, worklogConfig.rounding, worklogConfig.min_seconds),
+      block_ids: [],
+    }];
+  }
+
+  const groups = new Map<string, WorklogGroup>();
+  for (const block of sourceBlocks) {
+    const rawSeconds = block.raw_duration_seconds ?? 0;
+    const key = buildBlockKey(block);
+    const existing = groups.get(key);
+
+    if (existing) {
+      existing.raw_duration_seconds += rawSeconds;
+      existing.rounded_duration_seconds = roundSeconds(
+        existing.raw_duration_seconds,
+        worklogConfig.rounding,
+        worklogConfig.min_seconds
+      );
+      existing.block_ids.push(block.block_id);
+      continue;
+    }
+
+    groups.set(key, {
+      block_key: key,
+      actor_mode: block.actor_mode,
+      work_kind: block.work_kind,
+      description: block.description,
+      started_at: block.started_at,
+      started_at_local: block.started_at_local,
+      raw_duration_seconds: rawSeconds,
+      rounded_duration_seconds: roundSeconds(rawSeconds, worklogConfig.rounding, worklogConfig.min_seconds),
+      block_ids: [block.block_id],
+    });
+  }
+
+  return [...groups.values()].filter((group) => group.rounded_duration_seconds > 0);
+}
+
+async function createJiraWorklog(
+  session: TimerSession,
+  startedAtLocalIso: string,
+  durationSeconds: number,
+  comment: string
+): Promise<Record<string, unknown>> {
   const config = getTimerConfig();
   const jiraConfig = resolveJiraConfig(config.jira);
   const jira = new JiraClient(jiraConfig);
   const payload = buildWorklogPayload(
-    session.started_at_local,
-    session.rounded_duration_seconds ?? 0,
+    startedAtLocalIso,
+    durationSeconds,
     comment
   );
   return jira.createWorklog(session.jira_issue_key, payload);
+}
+
+class WorklogGroupSyncError extends Error {
+  constructor(
+    message: string,
+    readonly results: JiraWorklogSyncResult[]
+  ) {
+    super(message);
+  }
+}
+
+async function syncWorklogGroups(
+  session: TimerSession,
+  groups: WorklogGroup[],
+  archiveComment: string
+): Promise<JiraWorklogSyncResult[]> {
+  const results = (session.jira_worklogs ?? []).filter((result) => result.status === 'synced');
+
+  for (const group of groups) {
+    const alreadySynced = results.find(
+      (result) => result.block_key === group.block_key && result.status === 'synced'
+    );
+    if (alreadySynced) {
+      continue;
+    }
+
+    try {
+      const response = await createJiraWorklog(
+        session,
+        group.started_at_local,
+        group.rounded_duration_seconds,
+        buildWorklogComment(session, group, archiveComment)
+      );
+      results.push({
+        block_key: group.block_key,
+        actor_mode: group.actor_mode,
+        work_kind: group.work_kind,
+        description: group.description,
+        started_at: group.started_at,
+        started_at_local: group.started_at_local,
+        raw_duration_seconds: group.raw_duration_seconds,
+        rounded_duration_seconds: group.rounded_duration_seconds,
+        jira_worklog_id: typeof response.id === 'string' ? response.id : String(response.id ?? ''),
+        status: 'synced',
+      });
+    } catch (error) {
+      results.push({
+        block_key: group.block_key,
+        actor_mode: group.actor_mode,
+        work_kind: group.work_kind,
+        description: group.description,
+        started_at: group.started_at,
+        started_at_local: group.started_at_local,
+        raw_duration_seconds: group.raw_duration_seconds,
+        rounded_duration_seconds: group.rounded_duration_seconds,
+        status: 'pending',
+        sync_error: getErrorMessage(error),
+      });
+      throw new WorklogGroupSyncError(getErrorMessage(error), results);
+    }
+  }
+
+  return results;
 }
 
 async function addJiraComment(issueKey: string, text: string): Promise<Record<string, unknown>> {
@@ -73,14 +386,21 @@ async function addJiraComment(issueKey: string, text: string): Promise<Record<st
 }
 
 function buildArchiveSuccessComment(session: TimerSession): string {
+  const worklogIds = (session.jira_worklogs ?? [])
+    .map((worklog) => worklog.jira_worklog_id)
+    .filter((id): id is string => Boolean(id));
+  const breakdown = (session.jira_worklogs ?? [])
+    .filter((worklog) => worklog.status === 'synced')
+    .map((worklog) => `- ${ACTOR_MODE_LABELS[worklog.actor_mode]} / ${worklog.work_kind}: ${formatDuration(worklog.rounded_duration_seconds)}`);
   const lines = [
     'OpenSpec archive completed.',
     '',
     `Issue: ${session.jira_issue_key}`,
     session.openspec_change?.name ? `Change: ${session.openspec_change.name}` : undefined,
     `Duration: ${formatDuration(session.rounded_duration_seconds ?? 0)}`,
-    session.jira_worklog_id ? `Jira worklog: ${session.jira_worklog_id}` : undefined,
+    worklogIds.length > 0 ? `Jira worklogs: ${worklogIds.join(', ')}` : session.jira_worklog_id ? `Jira worklog: ${session.jira_worklog_id}` : undefined,
     session.comment ? `Comment: ${session.comment}` : undefined,
+    breakdown.length > 0 ? `\nBreakdown:\n${breakdown.join('\n')}` : undefined,
   ].filter((line): line is string => Boolean(line));
 
   return lines.join('\n');
@@ -96,6 +416,7 @@ export async function hasTimerSession(): Promise<boolean> {
 
 export async function purpose(issueKey: string, options: PurposeOptions = {}): Promise<void> {
   validateIssueKey(issueKey);
+  const started = nowUtc();
 
   const existing = await getActiveSession();
   if (existing?.status === 'running' || existing?.status === 'paused') {
@@ -126,8 +447,7 @@ export async function purpose(issueKey: string, options: PurposeOptions = {}): P
     };
   }
 
-  const started = nowUtc();
-  const session: TimerSession = {
+  let session: TimerSession = {
     session_id: randomUUID(),
     jira_issue_key: issueKey,
     jira_ticket: importedTicket,
@@ -141,7 +461,24 @@ export async function purpose(issueKey: string, options: PurposeOptions = {}): P
     notes: null,
     paused_duration_seconds: 0,
     pause_events: [],
+    blocks: [],
+    current_block: createBlock(
+      started,
+      options.importTicket || options.createChange ? 'ai_autonomous' : 'human',
+      options.importTicket || options.createChange ? 'spec' : 'implementation',
+      options.createChange
+        ? 'OpenSpec generated change artifacts from Jira ticket'
+        : options.importTicket
+          ? 'OpenSpec imported Jira ticket context'
+          : DEFAULT_HUMAN_DESCRIPTION,
+      'auto'
+    ),
   };
+
+  if (options.importTicket || options.createChange) {
+    const handoffAt = nowUtc();
+    session = startDefaultHumanBlock(session, handoffAt);
+  }
 
   await saveActiveSession(session);
   console.log(`Started OpenSpec session for ${issueKey} at ${session.started_at_local}`);
@@ -150,6 +487,66 @@ export async function purpose(issueKey: string, options: PurposeOptions = {}): P
   }
   if (createdChange) {
     console.log(`Created OpenSpec change '${createdChange.name}' at openspec/changes/${createdChange.name}/`);
+  }
+}
+
+export async function startManualHumanTimer(
+  issueKey: string,
+  options: StartManualHumanTimerOptions = {}
+): Promise<void> {
+  validateIssueKey(issueKey);
+
+  const existing = await getActiveSession();
+  if (existing?.status === 'running' || existing?.status === 'paused') {
+    throw new Error("There is already an active OpenSpec session.\nUse 'openspec archive' or 'openspec timer cancel'.");
+  }
+  if (existing?.status === 'sync_pending') {
+    throw new Error("There is a pending OpenSpec worklog sync.\nUse 'openspec archive --retry' or 'openspec timer cancel'.");
+  }
+
+  const config = getTimerConfig();
+  const jiraConfig = resolveJiraConfig(config.jira);
+  let importedTicket: ImportedJiraTicket | undefined;
+
+  if (options.importTicket) {
+    importedTicket = await fetchImportedJiraTicket(issueKey);
+  } else {
+    const jira = new JiraClient(jiraConfig);
+    await jira.getIssue(issueKey);
+  }
+
+  const started = nowUtc();
+  const kind = options.kind ?? 'implementation';
+  const description = options.description?.trim()
+    || (kind === 'bugfix' ? 'Manual bugfix work' : DEFAULT_HUMAN_DESCRIPTION);
+  const session: TimerSession = {
+    session_id: randomUUID(),
+    jira_issue_key: issueKey,
+    jira_ticket: importedTicket,
+    started_at: toUtcIso(started),
+    started_at_local: toLocalIso(started),
+    user_email: jiraConfig.email,
+    status: 'running',
+    command: 'timer_start',
+    cwd: process.cwd(),
+    notes: null,
+    paused_duration_seconds: 0,
+    pause_events: [],
+    blocks: [],
+    current_block: createBlock(
+      started,
+      'human',
+      kind,
+      description,
+      'manual'
+    ),
+  };
+
+  await saveActiveSession(session);
+  console.log(`Started manual human OpenSpec timer for ${issueKey} at ${session.started_at_local}`);
+  console.log(`Current block: human / ${kind}`);
+  if (importedTicket) {
+    console.log(`Imported Jira ticket context: ${importedTicket.key} - ${importedTicket.summary}`);
   }
 }
 
@@ -183,27 +580,36 @@ export async function archiveTimer(options: ArchiveTimerOptions = {}): Promise<T
   if (session.status === 'running' || session.status === 'paused') {
     const ended = nowUtc();
     const pausedSeconds = getPauseSeconds(session, ended);
-    const rawSeconds = Math.max(0, secondsBetween(session.started_at, ended) - pausedSeconds);
-    const roundedSeconds = roundSeconds(
-      rawSeconds,
-      worklogConfig.rounding as WorklogRoundingMode,
-      worklogConfig.min_seconds
+    const sessionWithClosedBlock = session.status === 'running'
+      ? closeCurrentBlock(session, ended)
+      : session;
+    const blockRawSeconds = (sessionWithClosedBlock.blocks ?? []).reduce(
+      (sum, block) => sum + (block.raw_duration_seconds ?? 0),
+      0
     );
+    const rawSeconds = blockRawSeconds > 0
+      ? blockRawSeconds
+      : Math.max(0, secondsBetween(session.started_at, ended) - pausedSeconds);
 
-    if (roundedSeconds <= 0) {
+    if (rawSeconds < 0) {
       throw new Error('OpenSpec session duration must be greater than zero.');
     }
 
     sessionToSync = {
-      ...session,
+      ...sessionWithClosedBlock,
       ended_at: toUtcIso(ended),
       ended_at_local: toLocalIso(ended),
       paused_duration_seconds: pausedSeconds,
       paused_at: undefined,
       paused_at_local: undefined,
       raw_duration_seconds: rawSeconds,
-      rounded_duration_seconds: roundedSeconds,
       comment,
+    };
+
+    const groups = buildWorklogGroups(sessionToSync, worklogConfig);
+    sessionToSync = {
+      ...sessionToSync,
+      rounded_duration_seconds: groups.reduce((sum, group) => sum + group.rounded_duration_seconds, 0),
     };
   }
 
@@ -211,11 +617,21 @@ export async function archiveTimer(options: ArchiveTimerOptions = {}): Promise<T
     throw new Error('No active OpenSpec session found.');
   }
 
+  const groups = buildWorklogGroups(sessionToSync, worklogConfig);
+  const roundedTotal = groups.reduce((sum, group) => sum + group.rounded_duration_seconds, 0);
+  if (groups.length === 0 || roundedTotal <= 0) {
+    throw new Error('OpenSpec session duration must be greater than zero.');
+  }
+
   try {
-    const response = await syncWorklog(sessionToSync, comment);
+    const jiraWorklogs = await syncWorklogGroups(sessionToSync, groups, comment);
+    const worklogIds = jiraWorklogs
+      .map((worklog) => worklog.jira_worklog_id)
+      .filter((id): id is string => Boolean(id));
     const closedSession: TimerSession = {
       ...sessionToSync,
-      jira_worklog_id: typeof response.id === 'string' ? response.id : String(response.id ?? ''),
+      jira_worklog_id: worklogIds[0] ?? '',
+      jira_worklogs: jiraWorklogs,
       worklog_status: 'synced',
       status: 'closed',
       sync_error: undefined,
@@ -226,7 +642,11 @@ export async function archiveTimer(options: ArchiveTimerOptions = {}): Promise<T
 
     console.log(`Archived OpenSpec session for ${closedSession.jira_issue_key}`);
     console.log(`Duration: ${formatDuration(closedSession.rounded_duration_seconds ?? 0)}`);
-    console.log(`Jira worklog created successfully: ${closedSession.jira_worklog_id}`);
+    if (worklogIds.length === 1) {
+      console.log(`Jira worklog created successfully: ${worklogIds[0]}`);
+    } else {
+      console.log(`Jira worklogs created successfully: ${worklogIds.join(', ')}`);
+    }
 
     if (options.addJiraArchiveComment !== false) {
       try {
@@ -239,11 +659,13 @@ export async function archiveTimer(options: ArchiveTimerOptions = {}): Promise<T
 
     return closedSession;
   } catch (error) {
+    const partialResults = error instanceof WorklogGroupSyncError ? error.results : sessionToSync.jira_worklogs;
     const pendingSession: TimerSession = {
       ...sessionToSync,
       status: 'sync_pending',
       worklog_status: 'pending',
-      sync_error: getErrorMessage(error),
+      jira_worklogs: partialResults,
+      sync_error: error instanceof WorklogGroupSyncError ? error.message : getErrorMessage(error),
       comment,
     };
     await saveActiveSession(pendingSession);
@@ -253,7 +675,7 @@ export async function archiveTimer(options: ArchiveTimerOptions = {}): Promise<T
   }
 }
 
-export async function status(): Promise<void> {
+export async function status(options: { blocks?: boolean } = {}): Promise<void> {
   const session = await getActiveSession();
   if (!session) {
     console.log('No active OpenSpec session found.');
@@ -279,9 +701,83 @@ export async function status(): Promise<void> {
   if (pausedSeconds > 0) {
     console.log(`Paused time: ${formatDuration(pausedSeconds)}`);
   }
+  if (session.current_block) {
+    const currentElapsed = session.status === 'paused'
+      ? 0
+      : secondsBetween(session.current_block.started_at, now);
+    console.log(`Current block: ${session.current_block.actor_mode} / ${session.current_block.work_kind}`);
+    console.log(`Current block elapsed: ${formatDuration(currentElapsed)}`);
+  }
+  if (options.blocks) {
+    const blocks = session.blocks ?? [];
+    if (blocks.length === 0) {
+      console.log('Blocks: none closed yet');
+    } else {
+      console.log('Blocks:');
+      for (const block of blocks) {
+        console.log(`- ${formatDuration(block.raw_duration_seconds ?? 0)} ${block.actor_mode} / ${block.work_kind}: ${block.description}`);
+      }
+    }
+  }
   if (session.sync_error) {
     console.log(`Sync error: ${session.sync_error}`);
   }
+}
+
+export async function switchBlock(options: SwitchBlockOptions): Promise<void> {
+  const session = await getActiveSession();
+  if (!session) {
+    throw new Error('No active OpenSpec session found.');
+  }
+  if (session.status === 'sync_pending') {
+    throw new Error("OpenSpec session is pending Jira sync.\nUse 'openspec archive --retry' to retry or 'openspec timer cancel' to discard it.");
+  }
+  if (session.status === 'paused') {
+    throw new Error("OpenSpec session is paused.\nUse 'openspec timer resume' before switching work blocks.");
+  }
+  if (session.status !== 'running') {
+    throw new Error('No running OpenSpec session found.');
+  }
+
+  const switchedAt = nowUtc();
+  const switchedSession = startBlock(
+    session,
+    switchedAt,
+    options.mode,
+    options.kind,
+    options.description?.trim() || `${ACTOR_MODE_LABELS[options.mode]} / ${options.kind}`,
+    options.source ?? 'manual'
+  );
+
+  await saveActiveSession(switchedSession);
+  console.log(`Switched OpenSpec timer block for ${session.jira_issue_key}`);
+  console.log(`Current block: ${options.mode} / ${options.kind}`);
+}
+
+export async function switchToAutomaticBlock(
+  mode: TimerActorMode,
+  kind: TimerWorkKind,
+  description: string
+): Promise<boolean> {
+  const session = await getActiveSession();
+  if (!session || session.status !== 'running') {
+    return false;
+  }
+
+  const switchedAt = nowUtc();
+  await saveActiveSession(startBlock(session, switchedAt, mode, kind, description, 'auto'));
+  return true;
+}
+
+export async function switchToDefaultHumanWork(description = DEFAULT_HUMAN_DESCRIPTION): Promise<boolean> {
+  const session = await getActiveSession();
+  if (!session || session.status !== 'running') {
+    return false;
+  }
+
+  const switchedAt = nowUtc();
+  await saveActiveSession(startBlock(session, switchedAt, 'human', 'implementation', description, 'auto'));
+  return true;
 }
 
 export async function pause(): Promise<void> {
@@ -300,12 +796,13 @@ export async function pause(): Promise<void> {
   }
 
   const pausedAt = nowUtc();
+  const sessionWithClosedBlock = closeCurrentBlock(session, pausedAt);
   const pauseEvent = {
     paused_at: toUtcIso(pausedAt),
     paused_at_local: toLocalIso(pausedAt),
   };
   const pausedSession: TimerSession = {
-    ...session,
+    ...sessionWithClosedBlock,
     status: 'paused',
     paused_at: pauseEvent.paused_at,
     paused_at_local: pauseEvent.paused_at_local,
@@ -346,7 +843,7 @@ export async function resume(): Promise<void> {
     };
   }
 
-  const resumedSession: TimerSession = {
+  let resumedSession: TimerSession = {
     ...session,
     status: 'running',
     paused_at: undefined,
@@ -354,6 +851,15 @@ export async function resume(): Promise<void> {
     paused_duration_seconds: (session.paused_duration_seconds ?? 0) + pauseDuration,
     pause_events: pauseEvents,
   };
+  const resumeTemplate = getResumeBlockTemplate(resumedSession);
+  resumedSession = startBlock(
+    resumedSession,
+    resumedAt,
+    resumeTemplate.actor_mode,
+    resumeTemplate.work_kind,
+    resumeTemplate.description,
+    resumeTemplate.source
+  );
 
   await saveActiveSession(resumedSession);
   console.log(`Resumed OpenSpec session for ${session.jira_issue_key} at ${toLocalIso(resumedAt)}`);
