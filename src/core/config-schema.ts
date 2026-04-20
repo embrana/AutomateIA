@@ -21,6 +21,30 @@ export const GlobalConfigSchema = z
     workflows: z
       .array(z.string())
       .optional(),
+    jira: z
+      .object({
+        base_url: z.string().url().optional(),
+        email: z.string().min(1).optional(),
+        api_token: z.string().min(1).optional(),
+        default_project: z.string().min(1).optional(),
+      })
+      .optional()
+      .default({}),
+    worklog: z
+      .object({
+        author_display: z.string().optional(),
+        rounding: z.enum(['minute', 'none']).optional().default('minute'),
+        min_seconds: z.number().int().min(0).optional().default(60),
+        comment_template: z.string().min(1).optional().default('OpenSpec execution session'),
+        track_metadata_locally: z.boolean().optional().default(true),
+      })
+      .optional()
+      .default({
+        rounding: 'minute',
+        min_seconds: 60,
+        comment_template: 'OpenSpec execution session',
+        track_metadata_locally: true,
+      }),
   })
   .passthrough();
 
@@ -33,9 +57,24 @@ export const DEFAULT_CONFIG: GlobalConfigType = {
   featureFlags: {},
   profile: 'core',
   delivery: 'both',
+  jira: {},
+  worklog: {
+    rounding: 'minute',
+    min_seconds: 60,
+    comment_template: 'OpenSpec execution session',
+    track_metadata_locally: true,
+  },
 };
 
 const KNOWN_TOP_LEVEL_KEYS = new Set([...Object.keys(DEFAULT_CONFIG), 'workflows']);
+const JIRA_KEYS = new Set(['base_url', 'email', 'api_token', 'default_project']);
+const WORKLOG_KEYS = new Set([
+  'author_display',
+  'rounding',
+  'min_seconds',
+  'comment_template',
+  'track_metadata_locally',
+]);
 
 /**
  * Validate a config key path for CLI set operations.
@@ -56,6 +95,32 @@ export function validateConfigKeyPath(path: string): { valid: boolean; reason?: 
   if (rootKey === 'featureFlags') {
     if (rawKeys.length > 2) {
       return { valid: false, reason: 'featureFlags values are booleans and do not support nested keys' };
+    }
+    return { valid: true };
+  }
+
+  if (rootKey === 'jira') {
+    if (rawKeys.length === 1) {
+      return { valid: true };
+    }
+    if (rawKeys.length > 2) {
+      return { valid: false, reason: 'jira values do not support deeply nested keys' };
+    }
+    if (!JIRA_KEYS.has(rawKeys[1])) {
+      return { valid: false, reason: `Unknown jira key "${rawKeys[1]}"` };
+    }
+    return { valid: true };
+  }
+
+  if (rootKey === 'worklog') {
+    if (rawKeys.length === 1) {
+      return { valid: true };
+    }
+    if (rawKeys.length > 2) {
+      return { valid: false, reason: 'worklog values do not support deeply nested keys' };
+    }
+    if (!WORKLOG_KEYS.has(rawKeys[1])) {
+      return { valid: false, reason: `Unknown worklog key "${rawKeys[1]}"` };
     }
     return { valid: true };
   }

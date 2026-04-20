@@ -136,7 +136,7 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
   },
   {
     name: 'archive',
-    description: 'Archive a completed change and update main specs',
+    description: 'Archive a completed change and sync an active Jira worklog session',
     acceptsPositional: true,
     positionalType: 'change-id',
     flags: [
@@ -153,6 +153,51 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         name: 'no-validate',
         description: 'Skip validation (not recommended)',
       },
+      {
+        name: 'comment',
+        description: 'Comment for the Jira worklog',
+        takesValue: true,
+      },
+      {
+        name: 'retry',
+        description: 'Retry a pending Jira worklog sync',
+      },
+    ],
+  },
+  {
+    name: 'purpose',
+    description: 'Start an OpenSpec work session for a Jira issue',
+    flags: [
+      {
+        name: 'jira',
+        description: 'Jira issue key to track work against',
+        takesValue: true,
+      },
+      {
+        name: 'import-ticket',
+        description: 'Import Jira ticket summary, status, assignee, description, and URL into the timer session',
+      },
+      {
+        name: 'create-change',
+        description: 'Create an OpenSpec change from the imported Jira ticket description',
+      },
+    ],
+  },
+  {
+    name: 'timer',
+    description: 'Manage the OpenSpec work timer',
+    flags: [],
+    subcommands: [
+      {
+        name: 'status',
+        description: 'Show the active OpenSpec work timer',
+        flags: [],
+      },
+      {
+        name: 'cancel',
+        description: 'Cancel the active OpenSpec work timer without creating a Jira worklog',
+        flags: [],
+      },
     ],
   },
   {
@@ -164,6 +209,36 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
         name: 'body',
         description: 'Detailed description for the feedback',
         takesValue: true,
+      },
+    ],
+  },
+  {
+    name: 'new',
+    description: 'Create new items',
+    flags: [],
+    subcommands: [
+      {
+        name: 'change',
+        description: 'Create a new change directory',
+        acceptsPositional: true,
+        positionalType: 'change-id',
+        flags: [
+          {
+            name: 'description',
+            description: 'Description to add to README.md',
+            takesValue: true,
+          },
+          {
+            name: 'schema',
+            description: 'Workflow schema to use',
+            takesValue: true,
+          },
+          {
+            name: 'from-ticket',
+            description: 'Create a change from a Jira ticket',
+            takesValue: true,
+          },
+        ],
       },
     ],
   },
@@ -325,6 +400,13 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
       },
       {
         name: 'list',
+        description: 'Show all current settings',
+        flags: [
+          COMMON_FLAGS.json,
+        ],
+      },
+      {
+        name: 'show',
         description: 'Show all current settings',
         flags: [
           COMMON_FLAGS.json,

@@ -108,6 +108,7 @@ describe('config command shell completion registry', () => {
 
     expect(subcommandNames).toContain('path');
     expect(subcommandNames).toContain('list');
+    expect(subcommandNames).toContain('show');
     expect(subcommandNames).toContain('get');
     expect(subcommandNames).toContain('set');
     expect(subcommandNames).toContain('unset');
@@ -120,9 +121,12 @@ describe('config command shell completion registry', () => {
 
     const configCmd = COMMAND_REGISTRY.find((cmd) => cmd.name === 'config');
     const listCmd = configCmd?.subcommands?.find((s) => s.name === 'list');
+    const showCmd = configCmd?.subcommands?.find((s) => s.name === 'show');
     const flagNames = listCmd?.flags?.map((f) => f.name) ?? [];
+    const showFlagNames = showCmd?.flags?.map((f) => f.name) ?? [];
 
     expect(flagNames).toContain('json');
+    expect(showFlagNames).toContain('json');
   });
 
   it('should have --string flag on set subcommand', async () => {
@@ -186,6 +190,22 @@ describe('config key validation', () => {
   it('allows workflows key', async () => {
     const { validateConfigKeyPath } = await import('../../src/core/config-schema.js');
     expect(validateConfigKeyPath('workflows').valid).toBe(true);
+  });
+
+  it('allows Jira config keys', async () => {
+    const { validateConfigKeyPath } = await import('../../src/core/config-schema.js');
+    expect(validateConfigKeyPath('jira.base_url').valid).toBe(true);
+    expect(validateConfigKeyPath('jira.email').valid).toBe(true);
+    expect(validateConfigKeyPath('jira.api_token').valid).toBe(true);
+    expect(validateConfigKeyPath('jira.unknown').valid).toBe(false);
+  });
+
+  it('allows worklog config keys', async () => {
+    const { validateConfigKeyPath } = await import('../../src/core/config-schema.js');
+    expect(validateConfigKeyPath('worklog.rounding').valid).toBe(true);
+    expect(validateConfigKeyPath('worklog.min_seconds').valid).toBe(true);
+    expect(validateConfigKeyPath('worklog.comment_template').valid).toBe(true);
+    expect(validateConfigKeyPath('worklog.unknown').valid).toBe(false);
   });
 });
 

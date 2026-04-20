@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://github.com/Fission-AI/OpenSpec">
+  <a href="https://github.com/embrana/AutomateIA">
     <picture>
       <source srcset="assets/openspec_bg.png">
       <img src="assets/openspec_bg.png" alt="OpenSpec logo">
@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Fission-AI/OpenSpec/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Fission-AI/OpenSpec/actions/workflows/ci.yml/badge.svg" /></a>
+  <a href="https://github.com/embrana/AutomateIA/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/embrana/AutomateIA/actions/workflows/ci.yml/badge.svg" /></a>
   <a href="https://www.npmjs.com/package/@fission-ai/openspec"><img alt="npm version" src="https://img.shields.io/npm/v/@fission-ai/openspec?style=flat-square" /></a>
   <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square" /></a>
   <a href="https://discord.gg/YctCnvvshC"><img alt="Discord" src="https://img.shields.io/discord/1411657095639601154?style=flat-square&logo=discord&logoColor=white&label=Discord&suffix=%20online" /></a>
@@ -17,9 +17,9 @@
 <details>
 <summary><strong>The most loved spec framework.</strong></summary>
 
-[![Stars](https://img.shields.io/github/stars/Fission-AI/OpenSpec?style=flat-square&label=Stars)](https://github.com/Fission-AI/OpenSpec/stargazers)
+[![Stars](https://img.shields.io/github/stars/embrana/AutomateIA?style=flat-square&label=Stars)](https://github.com/embrana/AutomateIA/stargazers)
 [![Downloads](https://img.shields.io/npm/dm/@fission-ai/openspec?style=flat-square&label=Downloads/mo)](https://www.npmjs.com/package/@fission-ai/openspec)
-[![Contributors](https://img.shields.io/github/contributors/Fission-AI/OpenSpec?style=flat-square&label=Contributors)](https://github.com/Fission-AI/OpenSpec/graphs/contributors)
+[![Contributors](https://img.shields.io/github/contributors/embrana/AutomateIA?style=flat-square&label=Contributors)](https://github.com/embrana/AutomateIA/graphs/contributors)
 
 </details>
 <p></p>
@@ -103,12 +103,200 @@ If you want the expanded workflow (`/opsx:new`, `/opsx:continue`, `/opsx:ff`, `/
 >
 > Also works with pnpm, yarn, bun, and nix. [See installation options](docs/installation.md).
 
+## Jira / Tempo Worklog Tracking
+
+This fork installs a separate CLI named `openspec-jira` so it can live alongside the official `openspec` package without one overwriting the other. If your team installs this fork from Git, use `openspec-jira` for the Jira/Tempo workflow commands.
+
+OpenSpec can track a local work session and create a Jira Cloud worklog when you archive it. For the MVP, OpenSpec writes to Jira's native worklog API; Tempo Timesheets reflects those Jira worklogs inside the Jira/Tempo ecosystem. You do not need a Tempo API token unless you later want Tempo-specific API features like bulk reporting, teams, accounts, approvals, or worklog attributes.
+
+When a timed archive succeeds, OpenSpec also tries to add a Jira issue comment summarizing the archive and worklog. If the OpenSpec archive is blocked by validation, the change remains open, but the active timer is still closed and synced as a Jira worklog because it represents developer time already spent. OpenSpec also tries to add a Jira issue comment with the blocking reason. This comment requires the Jira `Add comments` permission; if that permission is missing, worklog creation still succeeds but the Jira note is skipped with a warning.
+
+### Install This Fork
+
+Install the fork once:
+
+```bash
+npm install -g git+ssh://git@github.com/embrana/AutomateIA.git
+```
+
+If you are working from a local clone of this repository:
+
+```bash
+npm install
+npm run build
+npm install -g .
+```
+
+Check that the forked CLI is available:
+
+```bash
+openspec-jira --help
+```
+
+### Configure Jira Once
+
+Configure Jira once per developer machine:
+
+```bash
+openspec-jira config set jira.base_url https://your-company.atlassian.net
+openspec-jira config set jira.email dev@example.com
+openspec-jira config set jira.api_token YOUR_ATLASSIAN_API_TOKEN
+openspec-jira config set worklog.rounding minute
+openspec-jira config set worklog.min_seconds 60
+```
+
+Check the config without printing the token:
+
+```bash
+openspec-jira config show
+```
+
+Use the visible Jira issue key from the ticket, such as `PROJ-123`. You can find it in the ticket header or URL:
+
+```text
+https://your-company.atlassian.net/browse/PROJ-123
+```
+
+Required Jira permissions:
+
+```text
+Browse Projects
+Work on Issues
+Add comments
+```
+
+`Add comments` is only needed to write the OpenSpec archive summary back to the Jira ticket. If it is missing, the worklog can still be created.
+
+### Choose The Right Command
+
+Use this command when the change already exists and you only want to start a new timer session while importing Jira context:
+
+```bash
+openspec-jira purpose --jira PROJ-123 --import-ticket
+```
+
+This means:
+
+```text
+timer + Jira ticket context in .openspec/session.json
+no new OpenSpec artifacts
+no overwrite of existing change files
+```
+
+Use this command when you want to start the timer and create OpenSpec artifacts from the Jira ticket:
+
+```bash
+openspec-jira purpose --jira PROJ-123 --import-ticket --create-change
+```
+
+This means:
+
+```text
+timer + Jira ticket context
+attempts to create a new OpenSpec change
+creates proposal.md, tasks.md, jira-ticket.md, and specs/<change-name>/spec.md
+fails instead of overwriting if the change already exists
+```
+
+Use this command when you want to create OpenSpec artifacts from Jira without starting a timer:
+
+```bash
+openspec-jira new change --from-ticket PROJ-123
+```
+
+This means:
+
+```text
+no timer
+attempts to create a new OpenSpec change
+creates proposal.md, tasks.md, jira-ticket.md, and specs/<change-name>/spec.md
+fails instead of overwriting if the change already exists
+```
+
+With `--import-ticket`, OpenSpec stores ticket context in the active session: `key`, `summary`, `status`, `assignee`, `description_text`, and `url`. The `description_text` value is the plain-text form of the Jira ticket description.
+
+### Happy Path
+
+Create a timer session and artifacts from a Jira ticket:
+
+```bash
+openspec-jira purpose --jira PROJ-123 --import-ticket --create-change
+```
+
+Check what was created:
+
+```bash
+openspec-jira timer status
+openspec-jira list
+openspec-jira status --change <change-name>
+openspec-jira show <change-name> --type change
+```
+
+Ask your coding agent to implement the change using:
+
+```text
+openspec/changes/<change-name>/proposal.md
+openspec/changes/<change-name>/tasks.md
+openspec/changes/<change-name>/jira-ticket.md
+openspec/changes/<change-name>/specs/<change-name>/spec.md
+```
+
+Validate before archiving:
+
+```bash
+openspec-jira validate <change-name> --type change
+```
+
+Archive and create the Jira worklog:
+
+```bash
+openspec-jira archive <change-name> --yes --comment "OpenSpec implementation session"
+```
+
+Use the change name printed by `purpose --create-change` in the archive command.
+
+### Retake Work After An Abort
+
+If archive validation fails, the change remains open under `openspec/changes/<change-name>/`. The elapsed developer time is still sent to Jira as a worklog, and OpenSpec tries to add a compact Jira comment explaining why the archive was blocked.
+
+To continue working on the same ticket later, start a new timer session without recreating artifacts:
+
+```bash
+openspec-jira purpose --jira PROJ-123 --import-ticket
+```
+
+Then work on the existing change and archive again:
+
+```bash
+openspec-jira validate <change-name> --type change
+openspec-jira archive <change-name> --yes --comment "Correction and archive"
+```
+
+OpenSpec stores the active timer in `.openspec/session.json` and completed local metadata in `.openspec/sessions/`. Jira credentials are stored in the user's global OpenSpec config, normally `~/.config/openspec/config.json`; avoid committing API tokens to a project repository.
+
+When the Jira description contains structured SDD sections such as `## Acceptance Criteria`, `## Business Rules`, `## Domain / Data / Integration Contracts`, `## UX / Error States`, or `## Out of Scope`, OpenSpec uses those sections to create a richer delta spec. Acceptance criteria headings like `### CA-1 — ...` become OpenSpec scenarios.
+
+See the full terminal reference in [CLI](docs/cli.md).
+
+For a complete demo script, see [Jira / Tempo Happy Path Demo](docs/demo-jira-tempo-happy-path.md).
+
+To run a local sandbox version without real Jira credentials:
+
+```bash
+npm run demo:jira
+```
+
+The generated demo workspace is written to `demo-output/jira-happy-path/` so you can inspect the created OpenSpec change, archived specs, session metadata, and mock Jira worklog payload.
+
+The values `https://your-company.atlassian.net`, `dev@example.com`, `YOUR_ATLASSIAN_API_TOKEN`, and `PROJ-123` are examples for the real Jira flow. Replace them with real Jira values, or use `npm run demo:jira` for the sandbox path.
+
 ## Docs
 
 → **[Getting Started](docs/getting-started.md)**: first steps<br>
 → **[Workflows](docs/workflows.md)**: combos and patterns<br>
 → **[Commands](docs/commands.md)**: slash commands & skills<br>
 → **[CLI](docs/cli.md)**: terminal reference<br>
+→ **[Jira / Tempo Happy Path Demo](docs/demo-jira-tempo-happy-path.md)**: end-to-end demo flow<br>
 → **[Supported Tools](docs/supported-tools.md)**: tool integrations & install paths<br>
 → **[Concepts](docs/concepts.md)**: how it all fits<br>
 → **[Multi-Language](docs/multi-language.md)**: multi-language support<br>

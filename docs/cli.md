@@ -2,6 +2,8 @@
 
 The OpenSpec CLI (`openspec`) provides terminal commands for project setup, validation, status inspection, and management. These commands complement the AI slash commands (like `/opsx:propose`) documented in [Commands](commands.md).
 
+> Note: this Jira/Tempo fork installs a separate binary named `openspec-jira` so it can coexist with the official `openspec` package. When using this fork, run the same commands with `openspec-jira` in place of `openspec`.
+
 ## Summary
 
 | Category | Commands | Purpose |
@@ -10,6 +12,7 @@ The OpenSpec CLI (`openspec`) provides terminal commands for project setup, vali
 | **Browsing** | `list`, `view`, `show` | Explore changes and specs |
 | **Validation** | `validate` | Check changes and specs for issues |
 | **Lifecycle** | `archive` | Finalize completed changes |
+| **Timer** | `purpose`, `timer` | Track local work time and sync Jira worklogs |
 | **Workflow** | `status`, `instructions`, `templates`, `schemas` | Artifact-driven workflow support |
 | **Schemas** | `schema init`, `schema fork`, `schema validate`, `schema which` | Create and manage custom workflows |
 | **Config** | `config` | View and modify settings |
@@ -350,11 +353,77 @@ Validating add-dark-mode...
 
 ---
 
+## Work Timer Commands
+
+These commands track one local work session at a time and sync the elapsed time to Jira Cloud worklogs. Timer state is stored in `.openspec/session.json`; completed sessions are saved under `.openspec/sessions/`.
+
+### `openspec purpose`
+
+Start a work session for a Jira issue.
+
+```
+openspec purpose --jira <ISSUE-KEY> [--import-ticket] [--create-change]
+```
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--jira <issue-key>` | Jira issue key to track work against |
+| `--import-ticket` | Import ticket key, summary, status, assignee, description text, and URL into the local timer session |
+| `--create-change` | Create an OpenSpec change from the imported Jira ticket description |
+
+**Example:**
+
+```bash
+openspec purpose --jira PROJ-123
+openspec purpose --jira PROJ-123 --import-ticket
+openspec purpose --jira PROJ-123 --import-ticket --create-change
+```
+
+When `--create-change` is used, OpenSpec creates:
+
+```text
+openspec/changes/<change-name>/
+├── proposal.md
+├── tasks.md
+├── jira-ticket.md
+└── specs/<change-name>/spec.md
+```
+
+The initial delta spec is built from the Jira description. If the description already contains OpenSpec delta sections such as `## ADDED Requirements`, OpenSpec writes it as-is. If the description contains structured SDD sections such as `## Acceptance Criteria`, `## Business Rules`, `## Domain / Data / Integration Contracts`, `## UX / Error States`, or `## Out of Scope`, OpenSpec creates a richer requirement and turns acceptance criteria headings like `### CA-1 — ...` into OpenSpec scenarios.
+
+### `openspec timer`
+
+Inspect or cancel the active work timer.
+
+```
+openspec timer <subcommand>
+```
+
+**Subcommands:**
+
+| Subcommand | Description |
+|------------|-------------|
+| `status` | Show active timer status, Jira issue, and elapsed time |
+| `cancel` | Cancel the active timer without creating a Jira worklog |
+
+**Examples:**
+
+```bash
+openspec timer status
+openspec timer cancel
+```
+
+---
+
 ## Lifecycle Commands
 
 ### `openspec archive`
 
-Archive a completed change and merge delta specs into main specs.
+Archive a completed change and sync an active Jira worklog session. If a timer session is active and no `change-name` is provided, `archive` closes the timer and creates the Jira worklog.
+
+When `change-name` is provided, OpenSpec first attempts to archive the change. If validation blocks the archive, the change remains open, but the active timer is still closed and synced as a Jira worklog because it represents developer time already spent. OpenSpec attempts to add a Jira issue comment with the blocking reason.
 
 ```
 openspec archive [change-name] [options]
@@ -373,6 +442,8 @@ openspec archive [change-name] [options]
 | `-y, --yes` | Skip confirmation prompts |
 | `--skip-specs` | Skip spec updates (for infrastructure/tooling/doc-only changes) |
 | `--no-validate` | Skip validation (requires confirmation) |
+| `--comment <text>` | Override the Jira worklog comment |
+| `--retry` | Retry a previously failed Jira worklog sync |
 
 **Examples:**
 
@@ -388,14 +459,52 @@ openspec archive add-dark-mode --yes
 
 # Archive a tooling change that doesn't affect specs
 openspec archive update-ci-config --skip-specs
+
+# Close the active timer with a custom Jira worklog comment
+openspec archive --comment "OpenSpec implementation session"
+
+# Retry a failed Jira worklog sync
+openspec archive --retry
 ```
 
 **What it does:**
 
-1. Validates the change (unless `--no-validate`)
-2. Prompts for confirmation (unless `--yes`)
-3. Merges delta specs into `openspec/specs/`
-4. Moves change folder to `openspec/changes/archive/YYYY-MM-DD-<name>/`
+1. Validates and archives the change when a change is selected
+2. Calculates active timer duration when `.openspec/session.json` exists
+3. Rounds duration according to `worklog.rounding` and `worklog.min_seconds`
+4. Creates a Jira worklog with `timeSpentSeconds`, `started`, and an ADF comment
+5. Attempts to add a Jira issue comment with the archive result
+6. Saves local sync metadata under `.openspec/sessions/`
+
+Adding the Jira issue comment requires the Jira `Add comments` permission. If that permission is missing, the worklog can still be created and OpenSpec prints a warning.
+
+---
+
+## Creation Commands
+
+### `openspec new change`
+
+Create a new change directory. You can pass a name directly or create one from a Jira ticket.
+
+```
+openspec new change [name] [options]
+```
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--description <text>` | Description to add to `README.md` |
+| `--schema <name>` | Workflow schema to use |
+| `--from-ticket <issue-key>` | Import a Jira ticket and create `proposal.md`, `tasks.md`, `jira-ticket.md`, and an initial delta spec enriched from SDD sections when present |
+
+**Examples:**
+
+```bash
+openspec new change add-dark-mode
+openspec new change --from-ticket PROJ-123
+openspec new change custom-name --from-ticket PROJ-123
+```
 
 ---
 
@@ -770,6 +879,7 @@ openspec config <subcommand> [options]
 |------------|-------------|
 | `path` | Show config file location |
 | `list` | Show all current settings |
+| `show` | Alias for `list` |
 | `get <key>` | Get a specific value |
 | `set <key> <value>` | Set a value |
 | `unset <key>` | Remove a key |
@@ -794,6 +904,13 @@ openspec config set telemetry.enabled false
 
 # Set a string value explicitly
 openspec config set user.name "My Name" --string
+
+# Configure Jira worklog sync
+openspec config set jira.base_url https://your-company.atlassian.net
+openspec config set jira.email dev@example.com
+openspec config set jira.api_token your-token
+openspec config set worklog.rounding minute
+openspec config set worklog.min_seconds 60
 
 # Remove a custom setting
 openspec config unset user.name

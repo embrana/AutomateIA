@@ -201,6 +201,14 @@ function maybeWarnConfigDrift(
   console.log(colorize('Warning: Global config is not applied to this project. Run `openspec update` to sync.'));
 }
 
+function redactSensitiveConfig(config: GlobalConfig): GlobalConfig {
+  const redacted = JSON.parse(JSON.stringify(config)) as GlobalConfig;
+  if (redacted.jira?.api_token) {
+    redacted.jira.api_token = '********';
+  }
+  return redacted;
+}
+
 /**
  * Register the config command and all its subcommands.
  *
@@ -227,45 +235,54 @@ export function registerConfigCommand(program: Command): void {
       console.log(getGlobalConfigPath());
     });
 
+  const showConfig = (options: { json?: boolean }) => {
+    const config = getGlobalConfig();
+
+    if (options.json) {
+      console.log(JSON.stringify(config, null, 2));
+    } else {
+      // Read raw config to determine which values are explicit vs defaults
+      const configPath = getGlobalConfigPath();
+      let rawConfig: Record<string, unknown> = {};
+      try {
+        if (fs.existsSync(configPath)) {
+          rawConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+        }
+      } catch {
+        // If reading fails, treat all as defaults
+      }
+
+      console.log(formatValueYaml(redactSensitiveConfig(config)));
+
+      // Annotate profile settings
+      const profileSource = rawConfig.profile !== undefined ? '(explicit)' : '(default)';
+      const deliverySource = rawConfig.delivery !== undefined ? '(explicit)' : '(default)';
+      console.log(`\nProfile settings:`);
+      console.log(`  profile: ${config.profile} ${profileSource}`);
+      console.log(`  delivery: ${config.delivery} ${deliverySource}`);
+      if (config.profile === 'core') {
+        console.log(`  workflows: ${CORE_WORKFLOWS.join(', ')} (from core profile)`);
+      } else if (config.workflows && config.workflows.length > 0) {
+        console.log(`  workflows: ${config.workflows.join(', ')} (explicit)`);
+      } else {
+        console.log(`  workflows: (none)`);
+      }
+    }
+  };
+
   // config list
   configCmd
     .command('list')
     .description('Show all current settings')
     .option('--json', 'Output as JSON')
-    .action((options: { json?: boolean }) => {
-      const config = getGlobalConfig();
+    .action(showConfig);
 
-      if (options.json) {
-        console.log(JSON.stringify(config, null, 2));
-      } else {
-        // Read raw config to determine which values are explicit vs defaults
-        const configPath = getGlobalConfigPath();
-        let rawConfig: Record<string, unknown> = {};
-        try {
-          if (fs.existsSync(configPath)) {
-            rawConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-          }
-        } catch {
-          // If reading fails, treat all as defaults
-        }
-
-        console.log(formatValueYaml(config));
-
-        // Annotate profile settings
-        const profileSource = rawConfig.profile !== undefined ? '(explicit)' : '(default)';
-        const deliverySource = rawConfig.delivery !== undefined ? '(explicit)' : '(default)';
-        console.log(`\nProfile settings:`);
-        console.log(`  profile: ${config.profile} ${profileSource}`);
-        console.log(`  delivery: ${config.delivery} ${deliverySource}`);
-        if (config.profile === 'core') {
-          console.log(`  workflows: ${CORE_WORKFLOWS.join(', ')} (from core profile)`);
-        } else if (config.workflows && config.workflows.length > 0) {
-          console.log(`  workflows: ${config.workflows.join(', ')} (explicit)`);
-        } else {
-          console.log(`  workflows: (none)`);
-        }
-      }
-    });
+  // config show
+  configCmd
+    .command('show')
+    .description('Show all current settings')
+    .option('--json', 'Output as JSON')
+    .action(showConfig);
 
   // config get
   configCmd
@@ -324,8 +341,9 @@ export function registerConfigCommand(program: Command): void {
       setNestedValue(config, key, coercedValue);
       saveGlobalConfig(config as GlobalConfig);
 
-      const displayValue =
-        typeof coercedValue === 'string' ? `"${coercedValue}"` : String(coercedValue);
+      const displayValue = key === 'jira.api_token'
+        ? '"********"'
+        : typeof coercedValue === 'string' ? `"${coercedValue}"` : String(coercedValue);
       console.log(`Set ${key} = ${displayValue}`);
     });
 

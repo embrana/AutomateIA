@@ -157,5 +157,11 @@ opencode.json
 # Codex
 .codex/
 
+# OpenSpec local runtime state
+.openspec/
+
+# Demo output
+demo-output/
+
 # Bob
 .bob/

@@ -17,6 +17,17 @@ import { FeedbackCommand } from '../commands/feedback.js';
 import { registerConfigCommand } from '../commands/config.js';
 import { registerSchemaCommand } from '../commands/schema.js';
 import {
+  addJiraArchiveComment,
+  archiveTimer,
+  cancel as cancelTimer,
+  pause as pauseTimer,
+  purpose as startTimerSession,
+  resume as resumeTimer,
+  status as timerStatus,
+} from '../core/timer/commands.js';
+import { buildBlockedArchiveComment } from '../core/timer/archive-comment.js';
+import { getActiveSession as getActiveTimerSession } from '../core/timer/store.js';
+import {
   statusCommand,
   instructionsCommand,
   applyInstructionsCommand,
@@ -266,15 +277,124 @@ changeCmd
   });
 
 program
+  .command('purpose')
+  .description('Start an OpenSpec work session for a Jira issue')
+  .requiredOption('--jira <issue-key>', 'Jira issue key to track work against')
+  .option('--import-ticket', 'Import Jira ticket summary, status, assignee, description, and URL into the timer session')
+  .option('--create-change', 'Create an OpenSpec change from the imported Jira ticket description')
+  .action(async (options: { jira: string; importTicket?: boolean; createChange?: boolean }) => {
+    try {
+      await startTimerSession(options.jira, {
+        importTicket: options.importTicket,
+        createChange: options.createChange,
+      });
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+const timerCmd = program
+  .command('timer')
+  .description('Manage the OpenSpec work timer');
+
+timerCmd
+  .command('status')
+  .description('Show the active OpenSpec work timer')
+  .action(async () => {
+    try {
+      await timerStatus();
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+timerCmd
+  .command('pause')
+  .description('Pause the active OpenSpec work timer')
+  .action(async () => {
+    try {
+      await pauseTimer();
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+timerCmd
+  .command('resume')
+  .description('Resume a paused OpenSpec work timer')
+  .action(async () => {
+    try {
+      await resumeTimer();
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+timerCmd
+  .command('cancel')
+  .description('Cancel the active OpenSpec work timer without creating a Jira worklog')
+  .action(async () => {
+    try {
+      await cancelTimer();
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+program
   .command('archive [change-name]')
-  .description('Archive a completed change and update main specs')
+  .description('Archive a completed change and sync an active Jira worklog session')
   .option('-y, --yes', 'Skip confirmation prompts')
   .option('--skip-specs', 'Skip spec update operations (useful for infrastructure, tooling, or doc-only changes)')
   .option('--no-validate', 'Skip validation (not recommended, requires confirmation)')
-  .action(async (changeName?: string, options?: { yes?: boolean; skipSpecs?: boolean; noValidate?: boolean; validate?: boolean }) => {
+  .option('--comment <text>', 'Comment for the Jira worklog')
+  .option('--retry', 'Retry a pending Jira worklog sync')
+  .action(async (changeName?: string, options?: { yes?: boolean; skipSpecs?: boolean; noValidate?: boolean; validate?: boolean; comment?: string; retry?: boolean }) => {
     try {
+      const timerSession = await getActiveTimerSession();
+      if (options?.retry || timerSession?.status === 'sync_pending' || (timerSession && !changeName)) {
+        await archiveTimer({ comment: options?.comment, retry: options?.retry });
+        return;
+      }
+
       const archiveCommand = new ArchiveCommand();
-      await archiveCommand.execute(changeName, options);
+      const archiveResult = await archiveCommand.execute(changeName, options);
+
+      if (!archiveResult.archived) {
+        if (timerSession) {
+          console.log('OpenSpec change was not archived; Jira worklog will still be created for the elapsed developer time.');
+          const closedSession = await archiveTimer({ comment: options?.comment, addJiraArchiveComment: false });
+          const note = buildBlockedArchiveComment({
+            issueKey: timerSession.jira_issue_key,
+            changeName: archiveResult.changeName,
+            reason: archiveResult.reason,
+            diagnostics: archiveResult.diagnostics,
+            worklogId: closedSession.jira_worklog_id,
+          });
+
+          try {
+            await addJiraArchiveComment(timerSession.jira_issue_key, note);
+            console.log('Jira archive comment created successfully');
+          } catch (commentError) {
+            console.log(`Warning: OpenSpec archive was blocked, and Jira comment could not be added: ${(commentError as Error).message}`);
+          }
+        }
+        return;
+      }
+
+      if (timerSession) {
+        await archiveTimer({ comment: options?.comment });
+      }
     } catch (error) {
       console.log(); // Empty line for spacing
       ora().fail(`Error: ${(error as Error).message}`);
@@ -493,10 +613,11 @@ program
 const newCmd = program.command('new').description('Create new items');
 
 newCmd
-  .command('change <name>')
+  .command('change [name]')
   .description('Create a new change directory')
   .option('--description <text>', 'Description to add to README.md')
   .option('--schema <name>', `Workflow schema to use (default: ${DEFAULT_SCHEMA})`)
+  .option('--from-ticket <issue-key>', 'Create a change from a Jira ticket')
   .action(async (name: string, options: NewChangeOptions) => {
     try {
       await newChangeCommand(name, options);

@@ -114,7 +114,8 @@ Then expected result happens`;
       await fs.writeFile(path.join(changeSpecDir, 'spec.md'), specContent);
       
       // Execute archive with --yes flag and skip validation for speed
-      await archiveCommand.execute(changeName, { yes: true, noValidate: true });
+      const result = await archiveCommand.execute(changeName, { yes: true, noValidate: true });
+      expect(result.archived).toBe(true);
       
       // Verify spec was created from skeleton and ADDED requirement applied
       const mainSpecPath = path.join(tempDir, 'openspec', 'specs', 'test-capability', 'spec.md');
@@ -153,7 +154,8 @@ The system SHALL support logo and backgroundColor fields for gift cards.
       await fs.writeFile(path.join(changeSpecDir, 'spec.md'), specContent);
       
       // Execute archive - should succeed with warning about REMOVED requirements
-      await archiveCommand.execute(changeName, { yes: true, noValidate: true });
+      const result = await archiveCommand.execute(changeName, { yes: true, noValidate: true });
+      expect(result.archived).toBe(true);
       
       // Verify warning was logged about REMOVED requirements being ignored
       expect(console.log).toHaveBeenCalledWith(
@@ -198,7 +200,9 @@ Modified content.`;
       await fs.writeFile(path.join(changeSpecDir, 'spec.md'), specContent);
       
       // Execute archive - should abort with error message (not throw, but log and return)
-      await archiveCommand.execute(changeName, { yes: true, noValidate: true });
+      const result = await archiveCommand.execute(changeName, { yes: true, noValidate: true });
+      expect(result.archived).toBe(false);
+      expect(result.reason).toContain('Spec update preparation failed');
       
       // Verify error message mentions MODIFIED not allowed for new specs
       expect(console.log).toHaveBeenCalledWith(
@@ -236,7 +240,9 @@ New feature description.
       await fs.writeFile(path.join(changeSpecDir, 'spec.md'), specContent);
       
       // Execute archive - should abort with error message (not throw, but log and return)
-      await archiveCommand.execute(changeName, { yes: true, noValidate: true });
+      const result = await archiveCommand.execute(changeName, { yes: true, noValidate: true });
+      expect(result.archived).toBe(false);
+      expect(result.reason).toContain('Spec update preparation failed');
       
       // Verify error message mentions RENAMED not allowed for new specs
       expect(console.log).toHaveBeenCalledWith(

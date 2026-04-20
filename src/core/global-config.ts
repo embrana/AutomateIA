@@ -17,12 +17,31 @@ export interface GlobalConfig {
   profile?: Profile;
   delivery?: Delivery;
   workflows?: string[];
+  jira?: {
+    base_url?: string;
+    email?: string;
+    api_token?: string;
+    default_project?: string;
+  };
+  worklog?: {
+    author_display?: string;
+    rounding?: 'minute' | 'none';
+    min_seconds?: number;
+    comment_template?: string;
+    track_metadata_locally?: boolean;
+  };
 }
 
 const DEFAULT_CONFIG: GlobalConfig = {
   featureFlags: {},
   profile: 'core',
   delivery: 'both',
+  worklog: {
+    rounding: 'minute',
+    min_seconds: 60,
+    comment_template: 'OpenSpec execution session',
+    track_metadata_locally: true,
+  },
 };
 
 /**
@@ -117,7 +136,15 @@ export function getGlobalConfig(): GlobalConfig {
       featureFlags: {
         ...DEFAULT_CONFIG.featureFlags,
         ...(parsed.featureFlags || {})
-      }
+      },
+      jira: {
+        ...(DEFAULT_CONFIG.jira || {}),
+        ...(parsed.jira || {})
+      },
+      worklog: {
+        ...(DEFAULT_CONFIG.worklog || {}),
+        ...(parsed.worklog || {})
+      },
     };
 
     // Schema evolution: apply defaults for new fields if not present in loaded config
@@ -126,6 +153,9 @@ export function getGlobalConfig(): GlobalConfig {
     }
     if (parsed.delivery === undefined) {
       merged.delivery = DEFAULT_CONFIG.delivery;
+    }
+    if (parsed.worklog === undefined) {
+      merged.worklog = DEFAULT_CONFIG.worklog;
     }
 
     return merged;

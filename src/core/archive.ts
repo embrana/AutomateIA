@@ -10,6 +10,14 @@ import {
   type SpecUpdate,
 } from './specs-apply.js';
 
+export interface ArchiveResult {
+  archived: boolean;
+  changeName?: string;
+  archiveName?: string;
+  reason?: string;
+  diagnostics: string[];
+}
+
 /**
  * Recursively copy a directory. Used when fs.rename fails (e.g. EPERM on Windows).
  */
@@ -51,11 +59,12 @@ export class ArchiveCommand {
   async execute(
     changeName?: string,
     options: { yes?: boolean; skipSpecs?: boolean; noValidate?: boolean; validate?: boolean } = {}
-  ): Promise<void> {
+  ): Promise<ArchiveResult> {
     const targetPath = '.';
     const changesDir = path.join(targetPath, 'openspec', 'changes');
     const archiveDir = path.join(changesDir, 'archive');
     const mainSpecsDir = path.join(targetPath, 'openspec', 'specs');
+    const diagnostics: string[] = [];
 
     // Check if changes directory exists
     try {
@@ -69,7 +78,11 @@ export class ArchiveCommand {
       const selectedChange = await this.selectChange(changesDir);
       if (!selectedChange) {
         console.log('No change selected. Aborting.');
-        return;
+        return {
+          archived: false,
+          reason: 'No change selected.',
+          diagnostics,
+        };
       }
       changeName = selectedChange;
     }
@@ -101,9 +114,11 @@ export class ArchiveCommand {
         // Proposal validation is informative only (do not block archive)
         if (!changeReport.valid) {
           console.log(chalk.yellow(`\nProposal warnings in proposal.md (non-blocking):`));
+          diagnostics.push('Proposal warnings in proposal.md (non-blocking):');
           for (const issue of changeReport.issues) {
             const symbol = issue.level === 'ERROR' ? '⚠' : (issue.level === 'WARNING' ? '⚠' : 'ℹ');
             console.log(chalk.yellow(`  ${symbol} ${issue.message}`));
+            diagnostics.push(`${issue.level}: ${issue.message}`);
           }
         }
       } catch {
@@ -134,12 +149,14 @@ export class ArchiveCommand {
         if (!deltaReport.valid) {
           hasValidationErrors = true;
           console.log(chalk.red(`\nValidation errors in change delta specs:`));
+          diagnostics.push('Validation errors in change delta specs:');
           for (const issue of deltaReport.issues) {
             if (issue.level === 'ERROR') {
               console.log(chalk.red(`  ✗ ${issue.message}`));
             } else if (issue.level === 'WARNING') {
               console.log(chalk.yellow(`  ⚠ ${issue.message}`));
             }
+            diagnostics.push(`${issue.level}: ${issue.message}`);
           }
         }
       }
@@ -147,7 +164,12 @@ export class ArchiveCommand {
       if (hasValidationErrors) {
         console.log(chalk.red('\nValidation failed. Please fix the errors before archiving.'));
         console.log(chalk.yellow('To skip validation (not recommended), use --no-validate flag.'));
-        return;
+        return {
+          archived: false,
+          changeName,
+          reason: 'Validation failed. Please fix the errors before archiving.',
+          diagnostics,
+        };
       }
     } else {
       // Log warning when validation is skipped
@@ -161,7 +183,12 @@ export class ArchiveCommand {
         });
         if (!proceed) {
           console.log('Archive cancelled.');
-          return;
+          return {
+            archived: false,
+            changeName,
+            reason: 'Archive cancelled while confirming skipped validation.',
+            diagnostics,
+          };
         }
       } else {
         console.log(chalk.yellow(`\n⚠️  WARNING: Skipping validation may archive invalid specs.`));
@@ -186,7 +213,12 @@ export class ArchiveCommand {
         });
         if (!proceed) {
           console.log('Archive cancelled.');
-          return;
+          return {
+            archived: false,
+            changeName,
+            reason: 'Archive cancelled while confirming incomplete tasks.',
+            diagnostics,
+          };
         }
       } else {
         console.log(`Warning: ${incompleteTasks} incomplete task(s) found. Continuing due to --yes flag.`);
@@ -229,9 +261,16 @@ export class ArchiveCommand {
               prepared.push({ update, rebuilt: built.rebuilt, counts: built.counts });
             }
           } catch (err: any) {
-            console.log(String(err.message || err));
+            const message = String(err.message || err);
+            console.log(message);
             console.log('Aborted. No files were changed.');
-            return;
+            diagnostics.push(message);
+            return {
+              archived: false,
+              changeName,
+              reason: 'Spec update preparation failed. No files were changed.',
+              diagnostics,
+            };
           }
 
           // All validations passed; pre-validate rebuilt full spec and then write files and display counts
@@ -242,12 +281,19 @@ export class ArchiveCommand {
               const report = await new Validator().validateSpecContent(specName, p.rebuilt);
               if (!report.valid) {
                 console.log(chalk.red(`\nValidation errors in rebuilt spec for ${specName} (will not write changes):`));
+                diagnostics.push(`Validation errors in rebuilt spec for ${specName} (will not write changes):`);
                 for (const issue of report.issues) {
                   if (issue.level === 'ERROR') console.log(chalk.red(`  ✗ ${issue.message}`));
                   else if (issue.level === 'WARNING') console.log(chalk.yellow(`  ⚠ ${issue.message}`));
+                  diagnostics.push(`${issue.level}: ${issue.message}`);
                 }
                 console.log('Aborted. No files were changed.');
-                return;
+                return {
+                  archived: false,
+                  changeName,
+                  reason: `Validation errors in rebuilt spec for ${specName}. No files were changed.`,
+                  diagnostics,
+                };
               }
             }
             await writeUpdatedSpec(p.update, p.rebuilt, p.counts);
@@ -285,6 +331,12 @@ export class ArchiveCommand {
     await moveDirectory(changeDir, archivePath);
 
     console.log(`Change '${changeName}' archived as '${archiveName}'.`);
+    return {
+      archived: true,
+      changeName,
+      archiveName,
+      diagnostics,
+    };
   }
 
   private async selectChange(changesDir: string): Promise<string | null> {

@@ -8,6 +8,7 @@ import ora from 'ora';
 import path from 'path';
 import { createChange, validateChangeName } from '../../utils/change-utils.js';
 import { validateSchemaExists } from './shared.js';
+import { createChangeFromJiraIssue } from '../../core/timer/ticket-change.js';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -16,6 +17,7 @@ import { validateSchemaExists } from './shared.js';
 export interface NewChangeOptions {
   description?: string;
   schema?: string;
+  fromTicket?: string;
 }
 
 // -----------------------------------------------------------------------------
@@ -23,6 +25,38 @@ export interface NewChangeOptions {
 // -----------------------------------------------------------------------------
 
 export async function newChangeCommand(name: string | undefined, options: NewChangeOptions): Promise<void> {
+  const projectRoot = process.cwd();
+
+  // Validate schema if provided
+  if (options.schema) {
+    validateSchemaExists(options.schema, projectRoot);
+  }
+
+  if (options.fromTicket) {
+    if (name) {
+      const validation = validateChangeName(name);
+      if (!validation.valid) {
+        throw new Error(validation.error);
+      }
+    }
+
+    const spinner = ora(`Creating change from Jira ticket '${options.fromTicket}'...`).start();
+
+    try {
+      const result = await createChangeFromJiraIssue(options.fromTicket, {
+        name,
+        schema: options.schema,
+      });
+      spinner.succeed(
+        `Created change '${result.name}' from Jira ticket ${result.ticket.key} at openspec/changes/${result.name}/ (schema: ${result.schema})`
+      );
+      return;
+    } catch (error) {
+      spinner.fail(`Failed to create change from Jira ticket '${options.fromTicket}'`);
+      throw error;
+    }
+  }
+
   if (!name) {
     throw new Error('Missing required argument <name>');
   }
@@ -30,13 +64,6 @@ export async function newChangeCommand(name: string | undefined, options: NewCha
   const validation = validateChangeName(name);
   if (!validation.valid) {
     throw new Error(validation.error);
-  }
-
-  const projectRoot = process.cwd();
-
-  // Validate schema if provided
-  if (options.schema) {
-    validateSchemaExists(options.schema, projectRoot);
   }
 
   const schemaDisplay = options.schema ? ` with schema '${options.schema}'` : '';
