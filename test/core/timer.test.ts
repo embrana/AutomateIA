@@ -7,12 +7,14 @@ import {
   archiveTimer,
   pause,
   purpose,
+  report,
   resume,
   startManualHumanTimer,
   switchBlock,
   validateIssueKey,
 } from '../../src/core/timer/commands.js';
 import { getActiveSession, getSessionsDir } from '../../src/core/timer/store.js';
+import { buildAssignedTicketsJql, listAssignedTickets } from '../../src/core/timer/tickets.js';
 import { newChangeCommand } from '../../src/commands/workflow/new-change.js';
 
 function jsonResponse(data: unknown, init: ResponseInit = {}): Response {
@@ -176,6 +178,63 @@ describe('OpenSpec Jira work timer', () => {
     expect(consoleLogSpy).toHaveBeenCalledWith(
       'Imported Jira ticket context: PROJ-123 - Implement OpenSpec Jira tracking'
     );
+  });
+
+  it('lists assigned Jira tickets using default project JQL', async () => {
+    saveGlobalConfig({
+      featureFlags: {},
+      profile: 'core',
+      delivery: 'both',
+      jira: {
+        base_url: 'https://example.atlassian.net',
+        email: 'dev@example.com',
+        api_token: 'token',
+        default_project: 'PROJ',
+      },
+    });
+    fetchSpy.mockResolvedValueOnce(jsonResponse({
+      issues: [
+        {
+          key: 'PROJ-123',
+          fields: {
+            summary: 'Implement selectable ticket workflow',
+            status: { name: 'In Progress' },
+            assignee: { displayName: 'Emiliano' },
+          },
+        },
+      ],
+    }));
+
+    const tickets = await listAssignedTickets({ limit: 5 });
+
+    expect(tickets).toEqual([
+      {
+        key: 'PROJ-123',
+        summary: 'Implement selectable ticket workflow',
+        status: 'In Progress',
+        assignee: 'Emiliano',
+        url: 'https://example.atlassian.net/browse/PROJ-123',
+      },
+    ]);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'https://example.atlassian.net/rest/api/3/search/jql',
+      expect.objectContaining({
+        method: 'POST',
+      })
+    );
+    const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string);
+    expect(body).toMatchObject({
+      jql: 'project = "PROJ" AND assignee = currentUser() AND resolution IS EMPTY ORDER BY updated DESC',
+      fields: ['summary', 'status', 'assignee'],
+      maxResults: 5,
+    });
+  });
+
+  it('builds custom ticket JQL without default project filters', () => {
+    expect(buildAssignedTicketsJql({ allProjects: true })).toBe(
+      'assignee = currentUser() AND resolution IS EMPTY ORDER BY updated DESC'
+    );
+    expect(buildAssignedTicketsJql({ customJql: 'status = "In Progress"' })).toBe('status = "In Progress"');
   });
 
   it('creates an OpenSpec change from the imported Jira ticket during purpose', async () => {
@@ -459,6 +518,33 @@ Permitir al Director Técnico ingresar y guardar su información general de perf
         jira_worklog_id: 'interaction-1',
       }),
     ]);
+  });
+
+  it('reports Jira worklogs that would be created without syncing them', async () => {
+    vi.setSystemTime(new Date('2026-04-19T17:00:00.000Z'));
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ key: 'PROJ-123' }));
+
+    await purpose('PROJ-123');
+
+    vi.setSystemTime(new Date('2026-04-19T17:10:00.000Z'));
+    await switchBlock({
+      mode: 'ai_autonomous',
+      kind: 'spec',
+      description: 'Agent drafted the spec',
+    });
+
+    vi.setSystemTime(new Date('2026-04-19T17:25:00.000Z'));
+    await report({ dryRun: true, changeName: 'proj-123-demo-change' });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const output = consoleLogSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    expect(output).toContain('OpenSpec archive dry run');
+    expect(output).toContain('No Jira worklogs or comments will be created.');
+    expect(output).toContain('Change: proj-123-demo-change');
+    expect(output).toContain('Jira worklogs to create:');
+    expect(output).toContain('1. Human work / implementation');
+    expect(output).toContain('2. AI autonomous work / spec');
+    expect(output).toContain('Description: Agent drafted the spec');
   });
 
   it('starts a manual human bugfix timer outside the purpose/archive lifecycle', async () => {

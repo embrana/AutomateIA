@@ -133,6 +133,14 @@ Check that the forked CLI is available:
 openspec-jira --help
 ```
 
+For the daily Jira/Tempo workflow commands:
+
+```bash
+openspec-jira hlp
+openspec-jira hlp --short
+openspec-jira hlp --demo
+```
+
 ### Configure Jira Once
 
 Configure Jira once per developer machine:
@@ -150,6 +158,14 @@ Check the config without printing the token:
 ```bash
 openspec-jira config show
 ```
+
+List your assigned Jira tickets:
+
+```bash
+openspec-jira tickets
+```
+
+If `jira.default_project` is configured, `tickets` filters by that project. Use `--all-projects` to ignore the default project, or `--project PROJ` to choose one explicitly.
 
 Use the visible Jira issue key from the ticket, such as `PROJ-123`. You can find it in the ticket header or URL:
 
@@ -181,6 +197,21 @@ This means:
 timer + Jira ticket context in .openspec/session.json
 no new OpenSpec artifacts
 no overwrite of existing change files
+```
+
+Use this command when you want to pick one of your assigned Jira tickets instead of typing the issue key:
+
+```bash
+openspec-jira purpose --pick --import-ticket
+```
+
+This means:
+
+```text
+lists assigned Jira tickets
+lets you choose one
+starts the timer for the selected ticket
+imports Jira ticket context if --import-ticket is present
 ```
 
 Use this command when you want to start the timer and create OpenSpec artifacts from the Jira ticket:
@@ -246,6 +277,15 @@ Validate before archiving:
 ```bash
 openspec-jira validate <change-name> --type change
 ```
+
+Preview the Jira worklogs before writing anything:
+
+```bash
+openspec-jira timer report
+openspec-jira archive <change-name> --dry-run
+```
+
+`timer report` shows the active timer breakdown. `archive --dry-run` shows the same Jira worklog preview and does not archive OpenSpec files or write worklogs/comments to Jira.
 
 Archive and create the Jira worklog:
 

@@ -15,6 +15,13 @@ export interface GetIssueOptions {
   fields?: string[];
 }
 
+export interface SearchIssuesOptions {
+  jql: string;
+  fields?: string[];
+  maxResults?: number;
+  nextPageToken?: string;
+}
+
 export function resolveJiraConfig(config: JiraConfig | undefined): ResolvedJiraConfig {
   const missing: string[] = [];
   const baseUrl = config?.base_url;
@@ -98,6 +105,21 @@ export class JiraClient {
     }
 
     await this.ensureSuccessful(response, issueKey);
+    return (await response.json()) as Record<string, unknown>;
+  }
+
+  async searchIssues(options: SearchIssuesOptions): Promise<Record<string, unknown>> {
+    const response = await this.request('/rest/api/3/search/jql', {
+      method: 'POST',
+      body: JSON.stringify({
+        jql: options.jql,
+        fields: options.fields ?? [],
+        maxResults: options.maxResults ?? 20,
+        ...(options.nextPageToken ? { nextPageToken: options.nextPageToken } : {}),
+      }),
+    });
+
+    await this.ensureSuccessful(response, 'JQL search');
     return (await response.json()) as Record<string, unknown>;
   }
 

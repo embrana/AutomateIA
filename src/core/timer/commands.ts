@@ -75,6 +75,12 @@ export interface SwitchBlockOptions {
   source?: TimerBlockSource;
 }
 
+export interface TimerReportOptions {
+  dryRun?: boolean;
+  changeName?: string;
+  comment?: string;
+}
+
 interface WorklogGroup {
   block_key: string;
   actor_mode: TimerActorMode;
@@ -85,6 +91,13 @@ interface WorklogGroup {
   raw_duration_seconds: number;
   rounded_duration_seconds: number;
   block_ids: string[];
+}
+
+interface TimerReport {
+  session: TimerSession;
+  groups: WorklogGroup[];
+  rawDurationSeconds: number;
+  roundedDurationSeconds: number;
 }
 
 export function validateIssueKey(issueKey: string): void {
@@ -296,6 +309,37 @@ function buildWorklogGroups(
   }
 
   return [...groups.values()].filter((group) => group.rounded_duration_seconds > 0);
+}
+
+function buildReportFromSession(
+  session: TimerSession,
+  now: Date,
+  worklogConfig: Required<WorklogConfig>
+): TimerReport {
+  const pausedSeconds = getPauseSeconds(session, now);
+  const sessionWithClosedBlock = session.status === 'running'
+    ? closeCurrentBlock(session, now)
+    : session;
+  const blockRawSeconds = (sessionWithClosedBlock.blocks ?? []).reduce(
+    (sum, block) => sum + (block.raw_duration_seconds ?? 0),
+    0
+  );
+  const rawDurationSeconds = blockRawSeconds > 0
+    ? blockRawSeconds
+    : Math.max(0, secondsBetween(session.started_at, now) - pausedSeconds);
+  const sessionForGroups: TimerSession = {
+    ...sessionWithClosedBlock,
+    raw_duration_seconds: rawDurationSeconds,
+    comment: session.comment,
+  };
+  const groups = buildWorklogGroups(sessionForGroups, worklogConfig);
+
+  return {
+    session: sessionForGroups,
+    groups,
+    rawDurationSeconds,
+    roundedDurationSeconds: groups.reduce((sum, group) => sum + group.rounded_duration_seconds, 0),
+  };
 }
 
 async function createJiraWorklog(
@@ -722,6 +766,53 @@ export async function status(options: { blocks?: boolean } = {}): Promise<void> 
   if (session.sync_error) {
     console.log(`Sync error: ${session.sync_error}`);
   }
+}
+
+export async function report(options: TimerReportOptions = {}): Promise<void> {
+  const session = await getActiveSession();
+  if (!session) {
+    console.log('No active OpenSpec session found.');
+    return;
+  }
+
+  const config = getTimerConfig();
+  const worklogConfig = resolveWorklogConfig(config.worklog);
+  const reportSession = options.comment ? { ...session, comment: options.comment } : session;
+  const preview = buildReportFromSession(reportSession, nowUtc(), worklogConfig);
+
+  if (options.dryRun) {
+    console.log('OpenSpec archive dry run');
+    console.log('No OpenSpec files will be changed.');
+    console.log('No Jira worklogs or comments will be created.');
+    if (options.changeName) {
+      console.log(`Change: ${options.changeName}`);
+    }
+    console.log('');
+  }
+
+  console.log(`Issue: ${preview.session.jira_issue_key}`);
+  if (preview.session.jira_ticket?.summary) {
+    console.log(`Summary: ${preview.session.jira_ticket.summary}`);
+  }
+  if (preview.session.openspec_change?.name) {
+    console.log(`Session change: ${preview.session.openspec_change.name}`);
+  }
+  console.log(`Session status: ${session.status}`);
+  console.log(`Raw duration: ${formatDuration(preview.rawDurationSeconds)}`);
+  console.log(`Rounded Jira duration: ${formatDuration(preview.roundedDurationSeconds)}`);
+
+  if (preview.groups.length === 0) {
+    console.log('Jira worklogs to create: none');
+    return;
+  }
+
+  console.log('Jira worklogs to create:');
+  preview.groups.forEach((group, index) => {
+    console.log(`${index + 1}. ${ACTOR_MODE_LABELS[group.actor_mode]} / ${group.work_kind}`);
+    console.log(`   Duration: ${formatDuration(group.rounded_duration_seconds)} (raw ${formatDuration(group.raw_duration_seconds)})`);
+    console.log(`   Description: ${group.description}`);
+    console.log(`   Started: ${group.started_at_local}`);
+  });
 }
 
 export async function switchBlock(options: SwitchBlockOptions): Promise<void> {

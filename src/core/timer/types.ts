@@ -27,6 +27,14 @@ export interface ImportedJiraTicket {
   url: string;
 }
 
+export interface JiraTicketSummary {
+  key: string;
+  summary: string;
+  status: string | null;
+  assignee: string | null;
+  url: string;
+}
+
 export interface TimerPauseEvent {
   paused_at: string;
   paused_at_local: string;

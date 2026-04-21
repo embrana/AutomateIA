@@ -105,6 +105,12 @@ function createMockJiraServer() {
         return;
       }
 
+      if (req.method === 'POST' && url.pathname === '/rest/api/3/search/jql') {
+        res.writeHead(200);
+        res.end(JSON.stringify({ issues: [issue] }));
+        return;
+      }
+
       if (req.method === 'POST' && url.pathname === '/rest/api/3/issue/PROJ-123/worklog') {
         const payload = body ? JSON.parse(body) : {};
         const worklog = {
@@ -219,6 +225,8 @@ async function main() {
     await runCli(['config', 'set', 'worklog.rounding', 'minute'], { cwd: projectDir, configHome });
     await runCli(['config', 'set', 'worklog.min_seconds', '60'], { cwd: projectDir, configHome });
 
+    await runCli(['tickets'], { cwd: projectDir, configHome });
+
     await runCli(['purpose', '--jira', 'PROJ-123', '--import-ticket', '--create-change'], {
       cwd: projectDir,
       configHome,
@@ -232,7 +240,9 @@ async function main() {
     console.log(`Change path: ${path.join(projectDir, 'openspec', 'changes', changeName)}`);
 
     await runCli(['timer', 'status'], { cwd: projectDir, configHome });
+    await runCli(['timer', 'report'], { cwd: projectDir, configHome });
     await runCli(['validate', changeName, '--type', 'change'], { cwd: projectDir, configHome });
+    await runCli(['archive', changeName, '--dry-run', '--comment', 'Demo implementation for PROJ-123'], { cwd: projectDir, configHome });
     await runCli(['archive', changeName, '--yes', '--comment', 'Demo implementation for PROJ-123'], {
       cwd: projectDir,
       configHome,

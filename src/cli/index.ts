@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { createRequire } from 'module';
+import { select } from '@inquirer/prompts';
 import ora from 'ora';
 import path from 'path';
 import { promises as fs } from 'fs';
@@ -16,12 +17,14 @@ import { CompletionCommand } from '../commands/completion.js';
 import { FeedbackCommand } from '../commands/feedback.js';
 import { registerConfigCommand } from '../commands/config.js';
 import { registerSchemaCommand } from '../commands/schema.js';
+import { registerHlpCommand } from '../commands/hlp.js';
 import {
   addJiraArchiveComment,
   archiveTimer,
   cancel as cancelTimer,
   pause as pauseTimer,
   purpose as startTimerSession,
+  report as timerReport,
   resume as resumeTimer,
   startManualHumanTimer,
   status as timerStatus,
@@ -33,6 +36,7 @@ import {
 } from '../core/timer/commands.js';
 import { buildBlockedArchiveComment } from '../core/timer/archive-comment.js';
 import { getActiveSession as getActiveTimerSession } from '../core/timer/store.js';
+import { formatTicketSummary, listAssignedTickets } from '../core/timer/tickets.js';
 import {
   statusCommand,
   instructionsCommand,
@@ -52,6 +56,45 @@ import { maybeShowTelemetryNotice, trackCommand, shutdown } from '../telemetry/i
 const program = new Command();
 const require = createRequire(import.meta.url);
 const { version } = require('../../package.json');
+
+interface TicketPickerOptions {
+  project?: string;
+  allProjects?: boolean;
+  limit?: string | number;
+  jql?: string;
+}
+
+function parsePositiveInteger(value: string | number | undefined, fallback: number): number {
+  if (value === undefined) {
+    return fallback;
+  }
+  const parsed = typeof value === 'number' ? value : Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`Expected a positive number, got: ${value}`);
+  }
+  return parsed;
+}
+
+async function pickJiraIssue(options: TicketPickerOptions): Promise<string> {
+  const tickets = await listAssignedTickets({
+    project: options.project,
+    allProjects: options.allProjects,
+    limit: parsePositiveInteger(options.limit, 20),
+    jql: options.jql,
+  });
+
+  if (tickets.length === 0) {
+    throw new Error('No assigned Jira tickets found for the current filters.');
+  }
+
+  return select({
+    message: 'Choose a Jira ticket',
+    choices: tickets.map((ticket) => ({
+      name: formatTicketSummary(ticket),
+      value: ticket.key,
+    })),
+  });
+}
 
 /**
  * Get the full command path for nested commands.
@@ -285,15 +328,64 @@ changeCmd
 program
   .command('purpose')
   .description('Start an OpenSpec work session for a Jira issue')
-  .requiredOption('--jira <issue-key>', 'Jira issue key to track work against')
+  .option('--jira <issue-key>', 'Jira issue key to track work against')
+  .option('--pick', 'Pick one of your assigned Jira tickets interactively')
+  .option('--project <project-key>', 'Project key to filter tickets when using --pick')
+  .option('--all-projects', 'Ignore jira.default_project when using --pick')
+  .option('--limit <n>', 'Maximum tickets to show when using --pick', '20')
+  .option('--jql <query>', 'Custom JQL for --pick')
   .option('--import-ticket', 'Import Jira ticket summary, status, assignee, description, and URL into the timer session')
   .option('--create-change', 'Create an OpenSpec change from the imported Jira ticket description')
-  .action(async (options: { jira: string; importTicket?: boolean; createChange?: boolean }) => {
+  .action(async (options: { jira?: string; pick?: boolean; project?: string; allProjects?: boolean; limit?: string; jql?: string; importTicket?: boolean; createChange?: boolean }) => {
     try {
-      await startTimerSession(options.jira, {
+      const issueKey = options.pick
+        ? await pickJiraIssue(options)
+        : options.jira;
+      if (!issueKey) {
+        throw new Error("Missing Jira issue key. Use '--jira PROJ-123' or '--pick'.");
+      }
+      await startTimerSession(issueKey, {
         importTicket: options.importTicket,
         createChange: options.createChange,
       });
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('tickets')
+  .description('List Jira tickets assigned to the configured user')
+  .option('--project <project-key>', 'Project key to filter tickets')
+  .option('--all-projects', 'Ignore jira.default_project')
+  .option('--limit <n>', 'Maximum tickets to show', '20')
+  .option('--jql <query>', 'Custom JQL query')
+  .option('--json', 'Output tickets as JSON')
+  .action(async (options: { project?: string; allProjects?: boolean; limit?: string; jql?: string; json?: boolean }) => {
+    try {
+      const tickets = await listAssignedTickets({
+        project: options.project,
+        allProjects: options.allProjects,
+        limit: parsePositiveInteger(options.limit, 20),
+        jql: options.jql,
+      });
+
+      if (options.json) {
+        console.log(JSON.stringify(tickets, null, 2));
+        return;
+      }
+
+      if (tickets.length === 0) {
+        console.log('No assigned Jira tickets found.');
+        return;
+      }
+
+      for (const ticket of tickets) {
+        console.log(formatTicketSummary(ticket));
+        console.log(`  ${ticket.url}`);
+      }
     } catch (error) {
       console.log();
       ora().fail(`Error: ${(error as Error).message}`);
@@ -333,6 +425,19 @@ timerCmd
   .action(async (options: { blocks?: boolean }) => {
     try {
       await timerStatus({ blocks: options.blocks });
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+timerCmd
+  .command('report')
+  .description('Preview the Jira worklogs that archive would create')
+  .action(async () => {
+    try {
+      await timerReport();
     } catch (error) {
       console.log();
       ora().fail(`Error: ${(error as Error).message}`);
@@ -443,10 +548,15 @@ program
   .option('--no-validate', 'Skip validation (not recommended, requires confirmation)')
   .option('--comment <text>', 'Comment for the Jira worklog')
   .option('--retry', 'Retry a pending Jira worklog sync')
-  .action(async (changeName?: string, options?: { yes?: boolean; skipSpecs?: boolean; noValidate?: boolean; validate?: boolean; comment?: string; retry?: boolean }) => {
+  .option('--dry-run', 'Preview Jira worklogs without archiving OpenSpec or writing to Jira')
+  .action(async (changeName?: string, options?: { yes?: boolean; skipSpecs?: boolean; noValidate?: boolean; validate?: boolean; comment?: string; retry?: boolean; dryRun?: boolean }) => {
     let archiveAutoBlockStarted = false;
     try {
       const timerSession = await getActiveTimerSession();
+      if (options?.dryRun) {
+        await timerReport({ dryRun: true, changeName, comment: options.comment });
+        return;
+      }
       if (options?.retry || timerSession?.status === 'sync_pending' || (timerSession && !changeName)) {
         await archiveTimer({ comment: options?.comment, retry: options?.retry });
         return;
@@ -508,6 +618,7 @@ program
 registerSpecCommand(program);
 registerConfigCommand(program);
 registerSchemaCommand(program);
+registerHlpCommand(program);
 
 // Top-level validate command
 program
