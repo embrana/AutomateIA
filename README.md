@@ -105,21 +105,27 @@ If you want the expanded workflow (`/opsx:new`, `/opsx:continue`, `/opsx:ff`, `/
 
 ## Jira / Tempo Worklog Tracking
 
-This fork installs a separate CLI named `openspec-jira` so it can live alongside the official `openspec` package without one overwriting the other. If your team installs this fork from Git, use `openspec-jira` for the Jira/Tempo workflow commands.
+This fork installs a separate CLI named `osj` so it can live alongside the official `openspec` package without one overwriting the other. The older `openspec-jira` alias still works for backward compatibility, but `osj` is the recommended command.
 
-OpenSpec can track a local work session and create a Jira Cloud worklog when you archive it. For the MVP, OpenSpec writes to Jira's native worklog API; Tempo Timesheets reflects those Jira worklogs inside the Jira/Tempo ecosystem. You do not need a Tempo API token unless you later want Tempo-specific API features like bulk reporting, teams, accounts, approvals, or worklog attributes.
+OpenSpec can:
 
-When a timed archive succeeds, OpenSpec also tries to add a Jira issue comment summarizing the archive and worklog. If the OpenSpec archive is blocked by validation, the change remains open, but the active timer is still closed and synced as a Jira worklog because it represents developer time already spent. OpenSpec also tries to add a Jira issue comment with the blocking reason. This comment requires the Jira `Add comments` permission; if that permission is missing, worklog creation still succeeds but the Jira note is skipped with a warning.
+- import Jira ticket context,
+- create OpenSpec change artifacts from Jira,
+- track local work time,
+- split work into granular time blocks,
+- and create Jira Cloud worklogs when you close the session.
 
-### Install This Fork
+Tempo Timesheets reflects those Jira worklogs inside the Jira/Tempo UI because the integration writes to Jira's native worklog API.
 
-Install the fork once:
+### Install And Configure
+
+Install this fork:
 
 ```bash
 npm install -g git+ssh://git@github.com/embrana/AutomateIA.git
 ```
 
-If you are working from a local clone of this repository:
+Or from a local clone:
 
 ```bash
 npm install
@@ -127,50 +133,26 @@ npm run build
 npm install -g .
 ```
 
-Check that the forked CLI is available:
-
-```bash
-openspec-jira --help
-```
-
-For the daily Jira/Tempo workflow commands:
-
-```bash
-openspec-jira hlp
-openspec-jira hlp --short
-openspec-jira hlp --demo
-```
-
-### Configure Jira Once
-
 Configure Jira once per developer machine:
 
 ```bash
-openspec-jira config set jira.base_url https://your-company.atlassian.net
-openspec-jira config set jira.email dev@example.com
-openspec-jira config set jira.api_token YOUR_ATLASSIAN_API_TOKEN
-openspec-jira config set worklog.rounding minute
-openspec-jira config set worklog.min_seconds 60
+osj config set jira.base_url https://your-company.atlassian.net
+osj config set jira.email dev@example.com
+osj config set jira.api_token YOUR_ATLASSIAN_API_TOKEN
+osj config set jira.default_project PROJ
+osj config set worklog.rounding minute
+osj config set worklog.min_seconds 60
+osj config show
 ```
 
-Check the config without printing the token:
+Useful helpers:
 
 ```bash
-openspec-jira config show
-```
-
-List your assigned Jira tickets:
-
-```bash
-openspec-jira tickets
-```
-
-If `jira.default_project` is configured, `tickets` filters by that project. Use `--all-projects` to ignore the default project, or `--project PROJ` to choose one explicitly.
-
-Use the visible Jira issue key from the ticket, such as `PROJ-123`. You can find it in the ticket header or URL:
-
-```text
-https://your-company.atlassian.net/browse/PROJ-123
+osj --help
+osj hlp
+osj hlp --short
+osj hlp --demo
+osj tickets
 ```
 
 Required Jira permissions:
@@ -183,87 +165,76 @@ Add comments
 
 `Add comments` is only needed to write the OpenSpec archive summary back to the Jira ticket. If it is missing, the worklog can still be created.
 
-### Choose The Right Command
+### Flow Map
 
-Use this command when the change already exists and you only want to start a new timer session while importing Jira context:
-
-```bash
-openspec-jira purpose --jira PROJ-123 --import-ticket
+```mermaid
+flowchart TD
+    A["Start"] --> B["osj tickets or osj purpose --pick --import-ticket"]
+    A --> C["osj purpose --jira PROJ-123 --import-ticket"]
+    A --> D["osj purpose --jira PROJ-123 --import-ticket --create-change"]
+    B --> E["Active timer session"]
+    C --> E
+    D --> F["Active timer + change artifacts"]
+    E --> G["osj new change --from-session"]
+    E --> H["Work without change"]
+    G --> F
+    F --> I["Implement / update tasks / validate"]
+    H --> J["osj archive --comment ..."]
+    I --> K["osj timer report or osj archive <change> --dry-run"]
+    K --> L["osj archive <change> --yes --comment ..."]
+    J --> M["Jira worklog created"]
+    L --> N{"Archive allowed?"}
+    N -->|"Yes"| O["Change archived + Jira worklogs created"]
+    N -->|"No"| P["Change remains open + Jira worklogs still created"]
 ```
 
-This means:
+### Flow 1: Start A Session Without Creating A Change
+
+Use this when the change already exists, or when you want to track time first and decide later whether you need OpenSpec artifacts.
+
+```mermaid
+flowchart LR
+    A["osj purpose --pick --import-ticket"] --> B["Choose assigned Jira ticket"]
+    B --> C["Create active timer session"]
+    C --> D["Store Jira context in .openspec/session.json"]
+    D --> E["Work on the ticket"]
+    E --> F["osj archive --comment '...'"]
+    F --> G["Create Jira worklog(s)"]
+    G --> H["Close session"]
+```
+
+Equivalent known-ticket command:
+
+```bash
+osj purpose --jira PROJ-123 --import-ticket
+```
+
+With `--import-ticket`, OpenSpec stores this in the active session:
 
 ```text
-timer + Jira ticket context in .openspec/session.json
-no new OpenSpec artifacts
-no overwrite of existing change files
+key
+summary
+status
+assignee
+description_text
+url
 ```
 
-Use this command when you want to pick one of your assigned Jira tickets instead of typing the issue key:
+### Flow 2: Start A Session And Create The Change Immediately
 
-```bash
-openspec-jira purpose --pick --import-ticket
+Use this when you already know you want the full OpenSpec flow from the start.
+
+```mermaid
+flowchart LR
+    A["osj purpose --jira PROJ-123 --import-ticket --create-change"] --> B["Validate Jira ticket"]
+    B --> C["Start timer session"]
+    C --> D["Generate proposal.md, tasks.md, jira-ticket.md, spec.md"]
+    D --> E["Work on implementation"]
+    E --> F["osj validate <change-name> --type change"]
+    F --> G["osj archive <change-name> --yes --comment '...'"]
 ```
 
-This means:
-
-```text
-lists assigned Jira tickets
-lets you choose one
-starts the timer for the selected ticket
-imports Jira ticket context if --import-ticket is present
-```
-
-Use this command when you want to start the timer and create OpenSpec artifacts from the Jira ticket:
-
-```bash
-openspec-jira purpose --jira PROJ-123 --import-ticket --create-change
-```
-
-This means:
-
-```text
-timer + Jira ticket context
-attempts to create a new OpenSpec change
-creates proposal.md, tasks.md, jira-ticket.md, and specs/<change-name>/spec.md
-fails instead of overwriting if the change already exists
-```
-
-Use this command when you want to create OpenSpec artifacts from Jira without starting a timer:
-
-```bash
-openspec-jira new change --from-ticket PROJ-123
-```
-
-This means:
-
-```text
-no timer
-attempts to create a new OpenSpec change
-creates proposal.md, tasks.md, jira-ticket.md, and specs/<change-name>/spec.md
-fails instead of overwriting if the change already exists
-```
-
-With `--import-ticket`, OpenSpec stores ticket context in the active session: `key`, `summary`, `status`, `assignee`, `description_text`, and `url`. The `description_text` value is the plain-text form of the Jira ticket description.
-
-### Happy Path
-
-Create a timer session and artifacts from a Jira ticket:
-
-```bash
-openspec-jira purpose --jira PROJ-123 --import-ticket --create-change
-```
-
-Check what was created:
-
-```bash
-openspec-jira timer status
-openspec-jira list
-openspec-jira status --change <change-name>
-openspec-jira show <change-name> --type change
-```
-
-Ask your coding agent to implement the change using:
+Artifacts created:
 
 ```text
 openspec/changes/<change-name>/proposal.md
@@ -272,53 +243,176 @@ openspec/changes/<change-name>/jira-ticket.md
 openspec/changes/<change-name>/specs/<change-name>/spec.md
 ```
 
-Validate before archiving:
+### Flow 3: Start The Session First, Create The Change Later
 
-```bash
-openspec-jira validate <change-name> --type change
+This is the flow for: "I chose the ticket, I started working, and now I want OpenSpec artifacts."
+
+```mermaid
+flowchart LR
+    A["osj purpose --pick --import-ticket"] --> B["Active timer session"]
+    B --> C["Work a bit"]
+    C --> D["osj new change --from-session"]
+    D --> E["Reuse Jira ticket from active session"]
+    E --> F["Create proposal.md, tasks.md, jira-ticket.md, spec.md"]
+    F --> G["Attach created change to active session"]
 ```
 
-Preview the Jira worklogs before writing anything:
+You can still create artifacts from a specific issue key without using the active session:
 
 ```bash
-openspec-jira timer report
-openspec-jira archive <change-name> --dry-run
+osj new change --from-ticket PROJ-123
 ```
 
-`timer report` shows the active timer breakdown. `archive --dry-run` shows the same Jira worklog preview and does not archive OpenSpec files or write worklogs/comments to Jira.
+### Flow 4: Preview Before Closing
 
-Archive and create the Jira worklog:
+Use this when you want to see exactly what Jira worklogs OpenSpec is about to create.
+
+```mermaid
+flowchart LR
+    A["Active timer session"] --> B["osj timer report"]
+    A --> C["osj archive <change-name> --dry-run --comment '...'"]
+    B --> D["Preview grouped Jira worklogs"]
+    C --> D
+    D --> E["No OpenSpec files changed"]
+    D --> F["No Jira worklogs or comments created"]
+```
+
+Useful commands:
 
 ```bash
-openspec-jira archive <change-name> --yes --comment "OpenSpec implementation session"
+osj timer status
+osj timer status --blocks
+osj timer report
+osj archive <change-name> --dry-run --comment "Implementation session"
 ```
 
-Use the change name printed by `purpose --create-change` in the archive command.
+### Flow 5: Archive Outcomes
 
-### Retake Work After An Abort
+There are two important archive outcomes now:
 
-If archive validation fails, the change remains open under `openspec/changes/<change-name>/`. The elapsed developer time is still sent to Jira as a worklog, and OpenSpec tries to add a compact Jira comment explaining why the archive was blocked.
+1. the change can be archived successfully;
+2. the change can be blocked, but the developer time is still written to Jira.
 
-To continue working on the same ticket later, start a new timer session without recreating artifacts:
+```mermaid
+flowchart TD
+    A["osj archive <change-name> --yes --comment '...'"] --> B["Check tasks.md and validation rules"]
+    B --> C{"Archive allowed?"}
+    C -->|"Yes"| D["Apply specs and archive change"]
+    D --> E["Create Jira worklog(s)"]
+    D --> F["Add Jira summary comment"]
+    C -->|"No"| G["Keep change open"]
+    G --> H["Create Jira worklog(s) for elapsed developer time"]
+    G --> I["Add Jira comment explaining why archive was blocked"]
+```
+
+Important rule:
+
+```text
+Incomplete tasks in tasks.md block the OpenSpec archive.
+They do not block Jira worklog creation.
+```
+
+That means a developer can still log real time spent, even when the OpenSpec change is not ready to close.
+
+### Flow 6: Granular Time Blocks
+
+This workflow supports granular worklog segmentation for the same Jira ticket.
+
+```mermaid
+flowchart LR
+    A["Active Jira session"] --> B["human / implementation"]
+    B --> C["osj timer switch --mode ai_autonomous --kind spec"]
+    C --> D["ai_autonomous / spec"]
+    D --> E["osj timer bugfix --description 'Fix validation errors'"]
+    E --> F["human / bugfix"]
+    F --> G["osj archive ..."]
+    G --> H["Create one Jira worklog per grouped block"]
+```
+
+Commands for block control:
 
 ```bash
-openspec-jira purpose --jira PROJ-123 --import-ticket
+osj timer pause
+osj timer resume
+osj timer switch --mode human --kind bugfix --description "Fix validation errors"
+osj timer bugfix --description "Fix OpenSpec validation errors"
+osj timer start --jira PROJ-123 --description "Manual IDE work"
+osj timer cancel
 ```
 
-Then work on the existing change and archive again:
+### Command Map
 
-```bash
-openspec-jira validate <change-name> --type change
-openspec-jira archive <change-name> --yes --comment "Correction and archive"
+Use this as the shortest command guide:
+
+```text
+Find a ticket:
+  osj tickets
+
+Start timer from a picked ticket:
+  osj purpose --pick --import-ticket
+
+Start timer and create artifacts:
+  osj purpose --pick --import-ticket --create-change
+  osj purpose --jira PROJ-123 --import-ticket --create-change
+
+Create artifacts later from the active session:
+  osj new change --from-session
+
+Preview worklogs:
+  osj timer report
+  osj archive <change-name> --dry-run --comment "Implementation session"
+
+Archive successfully:
+  osj archive <change-name> --yes --comment "Implementation session"
+
+Close only the timer session, no change archive:
+  osj archive --comment "Implementation session"
+
+Retry failed sync:
+  osj archive --retry
 ```
 
-OpenSpec stores the active timer in `.openspec/session.json` and completed local metadata in `.openspec/sessions/`. Jira credentials are stored in the user's global OpenSpec config, normally `~/.config/openspec/config.json`; avoid committing API tokens to a project repository.
+### Where Data Is Stored
 
-When the Jira description contains structured SDD sections such as `## Acceptance Criteria`, `## Business Rules`, `## Domain / Data / Integration Contracts`, `## UX / Error States`, or `## Out of Scope`, OpenSpec uses those sections to create a richer delta spec. Acceptance criteria headings like `### CA-1 — ...` become OpenSpec scenarios.
+OpenSpec stores:
 
-See the full terminal reference in [CLI](docs/cli.md).
+```text
+.openspec/session.json
+  active timer session
 
-For a complete demo script, see [Jira / Tempo Happy Path Demo](docs/demo-jira-tempo-happy-path.md).
+.openspec/sessions/
+  closed local timer metadata
+
+openspec/changes/<change-name>/
+  change artifacts before archive
+
+openspec/changes/archive/
+  archived OpenSpec changes
+```
+
+Jira credentials are stored in the user's global OpenSpec config, normally:
+
+```text
+~/.config/openspec/config.json
+```
+
+Avoid committing API tokens to a project repository.
+
+### Structured Jira Descriptions
+
+When the Jira description contains structured SDD sections such as:
+
+```text
+## Acceptance Criteria
+## Business Rules
+## Domain / Data / Integration Contracts
+## UX / Error States
+## Out of Scope
+```
+
+OpenSpec uses those sections to create a richer delta spec. Acceptance criteria headings like `### CA-1 — ...` become OpenSpec scenarios.
+
+### Sandbox Demo
 
 To run a local sandbox version without real Jira credentials:
 
@@ -329,6 +423,8 @@ npm run demo:jira
 The generated demo workspace is written to `demo-output/jira-happy-path/` so you can inspect the created OpenSpec change, archived specs, session metadata, and mock Jira worklog payload.
 
 The values `https://your-company.atlassian.net`, `dev@example.com`, `YOUR_ATLASSIAN_API_TOKEN`, and `PROJ-123` are examples for the real Jira flow. Replace them with real Jira values, or use `npm run demo:jira` for the sandbox path.
+
+See the full terminal reference in [CLI](docs/cli.md) and the full walkthrough in [Jira / Tempo Happy Path Demo](docs/demo-jira-tempo-happy-path.md).
 
 ## Docs
 
