@@ -1,6 +1,6 @@
 # Jira / Tempo Happy Path Demo
 
-This demo shows the first end-to-end workflow for the `openspec-jira` fork:
+This demo shows the first end-to-end workflow for the `osj` fork:
 
 1. Developer already knows the Jira ticket key.
 2. OpenSpec imports the ticket SDD.
@@ -59,17 +59,17 @@ npm install -g git+ssh://git@github.com/your-org/openspec-jira-tempo.git
 The fork is invoked as:
 
 ```bash
-openspec-jira
+osj
 ```
 
 The developer has configured Jira credentials once on their machine:
 
 ```bash
-openspec-jira config set jira.base_url https://your-company.atlassian.net
-openspec-jira config set jira.email dev@example.com
-openspec-jira config set jira.api_token YOUR_ATLASSIAN_API_TOKEN
-openspec-jira config set worklog.rounding minute
-openspec-jira config set worklog.min_seconds 60
+osj config set jira.base_url https://your-company.atlassian.net
+osj config set jira.email dev@example.com
+osj config set jira.api_token YOUR_ATLASSIAN_API_TOKEN
+osj config set worklog.rounding minute
+osj config set worklog.min_seconds 60
 ```
 
 The developer is inside the product repository where OpenSpec is used:
@@ -100,7 +100,7 @@ The Jira ticket description contains SDD-like sections such as:
 
 ```mermaid
 flowchart TD
-    A["Developer knows Jira ticket PROJ-123"] --> B["openspec-jira purpose --jira PROJ-123 --import-ticket --create-change"]
+    A["Developer knows Jira ticket PROJ-123"] --> B["osj purpose --jira PROJ-123 --import-ticket --create-change"]
     B --> C["Jira issue is validated"]
     C --> D["Ticket SDD is imported"]
     D --> E["OpenSpec change is created"]
@@ -108,7 +108,7 @@ flowchart TD
     F --> G["Developer prompts agent to implement tasks"]
     G --> H["Code is changed"]
     H --> I["Developer validates"]
-    I --> J["openspec-jira archive <change> --comment ..."]
+    I --> J["osj archive <change> --comment ..."]
     J --> K["Specs are archived"]
     J --> L["Jira worklog is created"]
     L --> M["Tempo reflects Jira worklog"]
@@ -119,7 +119,7 @@ flowchart TD
 The developer starts the work session from the known Jira ticket:
 
 ```bash
-openspec-jira purpose --jira PROJ-123 --import-ticket --create-change
+osj purpose --jira PROJ-123 --import-ticket --create-change
 ```
 
 Expected output:
@@ -216,13 +216,13 @@ Then the agent changes product code and tests.
 The developer validates the OpenSpec change:
 
 ```bash
-openspec-jira validate proj-123-carga-y-persistencia-de-informacion-general-del --type change
+osj validate proj-123-carga-y-persistencia-de-informacion-general-del --type change
 ```
 
 Optional status check:
 
 ```bash
-openspec-jira status --change proj-123-carga-y-persistencia-de-informacion-general-del
+osj status --change proj-123-carga-y-persistencia-de-informacion-general-del
 ```
 
 Expected result:
@@ -236,7 +236,7 @@ Validation passed
 The developer archives the completed change:
 
 ```bash
-openspec-jira archive proj-123-carga-y-persistencia-de-informacion-general-del --yes --comment "Implemented Jira PROJ-123 with OpenSpec"
+osj archive proj-123-carga-y-persistencia-de-informacion-general-del --yes --comment "Implemented Jira PROJ-123 with OpenSpec"
 ```
 
 What OpenSpec does:
@@ -306,7 +306,7 @@ If Jira worklog creation fails, OpenSpec does not delete the active session. It 
 After fixing credentials or connectivity:
 
 ```bash
-openspec-jira archive --retry
+osj archive --retry
 ```
 
 If OpenSpec archive validation fails, the change is not archived and remains open. The active timer is still closed and synced as a Jira worklog because it represents developer time already spent. OpenSpec attempts to add a Jira issue comment with the blocking reason so the ticket keeps a trace of the failed archive attempt.
@@ -316,13 +316,13 @@ If OpenSpec archive validation fails, the change is not archived and remains ope
 Today the developer provides the ticket key:
 
 ```bash
-openspec-jira purpose --jira PROJ-123 --import-ticket --create-change
+osj purpose --jira PROJ-123 --import-ticket --create-change
 ```
 
 Stage 2 will add a ticket selection command:
 
 ```bash
-openspec-jira tickets assigned
+osj tickets assigned
 ```
 
 Expected future flow:

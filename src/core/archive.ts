@@ -205,24 +205,15 @@ export class ArchiveCommand {
 
     const incompleteTasks = Math.max(progress.total - progress.completed, 0);
     if (incompleteTasks > 0) {
-      if (!options.yes) {
-        const { confirm } = await import('@inquirer/prompts');
-        const proceed = await confirm({
-          message: `Warning: ${incompleteTasks} incomplete task(s) found. Continue?`,
-          default: false
-        });
-        if (!proceed) {
-          console.log('Archive cancelled.');
-          return {
-            archived: false,
-            changeName,
-            reason: 'Archive cancelled while confirming incomplete tasks.',
-            diagnostics,
-          };
-        }
-      } else {
-        console.log(`Warning: ${incompleteTasks} incomplete task(s) found. Continuing due to --yes flag.`);
-      }
+      const message = `Archive blocked: ${incompleteTasks} incomplete task(s) found in tasks.md. Complete the remaining tasks before archiving the change.`;
+      console.log(chalk.red(message));
+      diagnostics.push(`ERROR: ${message}`);
+      return {
+        archived: false,
+        changeName,
+        reason: message,
+        diagnostics,
+      };
     }
 
     // Handle spec updates unless skipSpecs flag is set

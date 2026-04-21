@@ -76,7 +76,7 @@ describe('ArchiveCommand', () => {
       await expect(fs.access(changeDir)).rejects.toThrow();
     });
 
-    it('should warn about incomplete tasks', async () => {
+    it('should block archive when tasks are incomplete', async () => {
       const changeName = 'incomplete-feature';
       const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
       await fs.mkdir(changeDir, { recursive: true });
@@ -85,12 +85,14 @@ describe('ArchiveCommand', () => {
       const tasksContent = '- [x] Task 1\n- [ ] Task 2\n- [ ] Task 3';
       await fs.writeFile(path.join(changeDir, 'tasks.md'), tasksContent);
       
-      // Execute archive with --yes flag
-      await archiveCommand.execute(changeName, { yes: true });
-      
-      // Verify warning was logged
+      const result = await archiveCommand.execute(changeName, { yes: true });
+
+      expect(result).toMatchObject({
+        archived: false,
+        changeName,
+      });
       expect(console.log).toHaveBeenCalledWith(
-        expect.stringContaining('Warning: 2 incomplete task(s) found')
+        expect.stringContaining('Archive blocked: 2 incomplete task(s) found in tasks.md')
       );
     });
 
@@ -832,20 +834,13 @@ E1 updated`);
       const tasksContent = '- [ ] Task 1';
       await fs.writeFile(path.join(changeDir, 'tasks.md'), tasksContent);
       
-      // Mock confirm to return true (proceed)
-      mockConfirm.mockResolvedValueOnce(true);
-      
-      // Execute without --yes flag
-      await archiveCommand.execute(changeName);
-      
-      // Verify confirm was called
-      expect(mockConfirm).toHaveBeenCalledWith({
-        message: 'Warning: 1 incomplete task(s) found. Continue?',
-        default: false
-      });
+      const result = await archiveCommand.execute(changeName);
+
+      expect(result.archived).toBe(false);
+      expect(mockConfirm).not.toHaveBeenCalled();
     });
 
-    it('should cancel when user declines task warning', async () => {
+    it('should block archive with incomplete tasks even when validation is skipped', async () => {
       const { confirm } = await import('@inquirer/prompts');
       const mockConfirm = confirm as unknown as ReturnType<typeof vi.fn>;
       
@@ -857,16 +852,15 @@ E1 updated`);
       const tasksContent = '- [ ] Task 1';
       await fs.writeFile(path.join(changeDir, 'tasks.md'), tasksContent);
       
-      // Mock confirm to return false (cancel) for validation skip
-      mockConfirm.mockResolvedValueOnce(false);
-      // Mock another false for task warning
-      mockConfirm.mockResolvedValueOnce(false);
-      
-      // Execute without --yes flag but skip validation to test task warning
-      await archiveCommand.execute(changeName, { noValidate: true });
-      
-      // Verify archive was cancelled
-      expect(console.log).toHaveBeenCalledWith('Archive cancelled.');
+      // Allow the validation-skip confirmation to proceed
+      mockConfirm.mockResolvedValueOnce(true);
+
+      const result = await archiveCommand.execute(changeName, { noValidate: true });
+
+      expect(result.archived).toBe(false);
+      expect(console.log).toHaveBeenCalledWith(
+        expect.stringContaining('Archive blocked: 1 incomplete task(s) found in tasks.md')
+      );
       
       // Verify change was not archived
       await expect(fs.access(changeDir)).resolves.not.toThrow();

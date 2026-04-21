@@ -372,7 +372,7 @@ export function registerConfigCommand(program: Command): void {
     .action(async (options: { all?: boolean; yes?: boolean }) => {
       if (!options.all) {
         console.error('Error: --all flag is required for reset');
-        console.error('Usage: openspec config reset --all [-y]');
+        console.error('Usage: osj config reset --all [-y]');
         process.exitCode = 1;
         return;
       }

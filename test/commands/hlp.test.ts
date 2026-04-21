@@ -6,11 +6,11 @@ describe('hlp command text', () => {
     const text = getHlpText();
 
     expect(text).toContain('OpenSpec Jira/Tempo Help');
-    expect(text).toContain('openspec-jira tickets');
-    expect(text).toContain('openspec-jira purpose --pick --import-ticket --create-change');
-    expect(text).toContain('openspec-jira timer report');
-    expect(text).toContain('openspec-jira archive <change-name> --dry-run');
-    expect(text).toContain('openspec-jira archive <change-name> --yes');
+    expect(text).toContain('osj tickets');
+    expect(text).toContain('osj purpose --pick --import-ticket --create-change');
+    expect(text).toContain('osj timer report');
+    expect(text).toContain('osj archive <change-name> --dry-run');
+    expect(text).toContain('osj archive <change-name> --yes');
   });
 
   it('shows the short daily workflow', () => {

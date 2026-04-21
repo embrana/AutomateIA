@@ -326,6 +326,50 @@ describe('OpenSpec Jira work timer', () => {
     expect(spec).toContain('Create OpenSpec artifacts from Jira.');
   });
 
+  it('creates an OpenSpec change from the active timer session ticket', async () => {
+    vi.setSystemTime(new Date('2026-04-19T17:03:11.000Z'));
+    fetchSpy.mockResolvedValueOnce(jsonResponse({
+      key: 'PROJ-123',
+      fields: {
+        summary: 'Implement from-session workflow',
+        status: {
+          name: 'In Progress',
+        },
+        assignee: {
+          displayName: 'Emiliano',
+        },
+        description: {
+          type: 'doc',
+          version: 1,
+          content: [
+            {
+              type: 'paragraph',
+              content: [
+                {
+                  type: 'text',
+                  text: 'Create a change from the active timer session.',
+                },
+              ],
+            },
+          ],
+        },
+      },
+    }));
+
+    await purpose('PROJ-123', { importTicket: true });
+    await newChangeCommand(undefined, { fromSession: true });
+
+    const changeDir = path.join(tempDir, 'openspec', 'changes', 'proj-123-implement-from-session-workflow');
+    const proposal = await fs.readFile(path.join(changeDir, 'proposal.md'), 'utf-8');
+    expect(proposal).toContain('Imported from Jira issue [PROJ-123]');
+
+    const session = await getActiveSession();
+    expect(session?.openspec_change).toMatchObject({
+      name: 'proj-123-implement-from-session-workflow',
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('turns structured Jira SDD sections into a richer OpenSpec delta spec', async () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse({
       key: 'PROJ-789',

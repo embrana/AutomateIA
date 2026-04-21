@@ -2,7 +2,7 @@
 
 The OpenSpec CLI (`openspec`) provides terminal commands for project setup, validation, status inspection, and management. These commands complement the AI slash commands (like `/opsx:propose`) documented in [Commands](commands.md).
 
-> Note: this Jira/Tempo fork installs a separate binary named `openspec-jira` so it can coexist with the official `openspec` package. When using this fork, run the same commands with `openspec-jira` in place of `openspec`.
+> Note: this Jira/Tempo fork installs a separate binary named `osj` so it can coexist with the official `openspec` package. When using this fork, run the same commands with `osj` in place of `openspec`.
 
 ## Summary
 

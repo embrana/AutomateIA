@@ -183,7 +183,7 @@ function close(server) {
 }
 
 async function runCli(args, options) {
-  const command = `openspec-jira ${args.join(' ')}`;
+  const command = `osj ${args.join(' ')}`;
   console.log(`\n$ ${command}`);
 
   return new Promise((resolve, reject) => {

@@ -56,6 +56,10 @@ import { maybeShowTelemetryNotice, trackCommand, shutdown } from '../telemetry/i
 const program = new Command();
 const require = createRequire(import.meta.url);
 const { version } = require('../../package.json');
+const invokedName = path.basename(process.argv[1] || 'osj');
+const cliName = invokedName === 'openspec.js' ? 'osj' : invokedName;
+
+program.name(cliName);
 
 interface TicketPickerOptions {
   project?: string;
@@ -117,7 +121,7 @@ function getCommandPath(command: Command): string {
 }
 
 program
-  .name('openspec')
+  .name(cliName)
   .description('AI-native system for spec-driven development')
   .version(version);
 
@@ -591,7 +595,7 @@ program
           } catch (commentError) {
             console.log(`Warning: OpenSpec archive was blocked, and Jira comment could not be added: ${(commentError as Error).message}`);
           }
-          console.log(`Suggested next step: openspec-jira timer bugfix --jira ${timerSession.jira_issue_key} --description "Fix OpenSpec archive validation errors"`);
+          console.log(`Suggested next step: osj timer bugfix --jira ${timerSession.jira_issue_key} --description "Fix OpenSpec archive validation errors"`);
         }
         return;
       }
@@ -604,7 +608,7 @@ program
         try {
           await switchToAutomaticBlock('human', 'bugfix', 'Fix failed OpenSpec archive command');
           console.log('Timer switched to human / bugfix.');
-          console.log('Suggested command: openspec-jira timer bugfix --description "Fix failed OpenSpec archive command"');
+          console.log('Suggested command: osj timer bugfix --description "Fix failed OpenSpec archive command"');
         } catch {
           // Keep the original archive error visible.
         }
@@ -832,6 +836,7 @@ newCmd
   .option('--description <text>', 'Description to add to README.md')
   .option('--schema <name>', `Workflow schema to use (default: ${DEFAULT_SCHEMA})`)
   .option('--from-ticket <issue-key>', 'Create a change from a Jira ticket')
+  .option('--from-session', 'Create a change from the Jira ticket in the active timer session')
   .action(async (name: string, options: NewChangeOptions) => {
     let newChangeAutoBlockStarted = false;
     try {
@@ -840,7 +845,7 @@ newCmd
         newChangeAutoBlockStarted = await switchToAutomaticBlock(
           'ai_autonomous',
           'spec',
-          options.fromTicket
+          options.fromTicket || options.fromSession
             ? 'OpenSpec generated change artifacts from Jira ticket'
             : 'OpenSpec generated change scaffold'
         );
@@ -854,7 +859,7 @@ newCmd
         try {
           await switchToAutomaticBlock('human', 'bugfix', 'Fix failed OpenSpec change generation');
           console.log('Timer switched to human / bugfix.');
-          console.log('Suggested command: openspec-jira timer bugfix --description "Fix failed OpenSpec change generation"');
+          console.log('Suggested command: osj timer bugfix --description "Fix failed OpenSpec change generation"');
         } catch {
           // Keep the original new change error visible.
         }

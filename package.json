@@ -27,6 +27,7 @@
     }
   },
   "bin": {
+    "osj": "./bin/openspec.js",
     "openspec-jira": "./bin/openspec.js"
   },
   "files": [
