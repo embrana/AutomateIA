@@ -4,6 +4,7 @@ import { select } from '@inquirer/prompts';
 import ora from 'ora';
 import path from 'path';
 import { promises as fs } from 'fs';
+import { resolveArchiveRouting } from './archive-routing.js';
 import { AI_TOOLS } from '../core/config.js';
 import { UpdateCommand } from '../core/update.js';
 import { ListCommand } from '../core/list.js';
@@ -749,12 +750,20 @@ program
     let archiveAutoBlockStarted = false;
     try {
       const timerSession = await getActiveTimerSession();
-      const targetChangeName = changeName ?? timerSession?.openspec_change?.name;
+      const routing = await resolveArchiveRouting({
+        projectRoot: process.cwd(),
+        explicitChangeName: changeName,
+        timerSession,
+      });
+      let targetChangeName = routing.targetChangeName;
+      if (routing.warning) {
+        console.log(routing.warning);
+      }
       if (options?.dryRun) {
         await timerReport({ dryRun: true, changeName: targetChangeName, comment: options.comment });
         return;
       }
-      if (options?.retry || timerSession?.status === 'sync_pending' || (timerSession && !targetChangeName)) {
+      if (options?.retry || timerSession?.status === 'sync_pending' || routing.fallBackToTimerArchive) {
         await archiveTimer({ comment: options?.comment, retry: options?.retry });
         return;
       }
