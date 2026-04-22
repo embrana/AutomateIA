@@ -38,11 +38,12 @@ export class SessionManager {
 
   async syncFromTimerSession(session: TimerSession, options: SessionSyncOptions = {}): Promise<RuntimeSnapshot> {
     const ticketKey = session.jira_issue_key;
-    const previousTicket = await this.runtimeStore.getTicketRuntime(ticketKey);
+    const persistedTicket = await this.runtimeStore.getTicketRuntime(ticketKey);
     const persistedSession = await this.runtimeStore.getSessionRuntime(ticketKey);
     const previousSession = persistedSession?.session_id === session.session_id
       ? persistedSession
       : null;
+    const previousTicket = previousSession ? persistedTicket : null;
     const previousChange = session.openspec_change?.name
       ? await this.runtimeStore.getChangeRuntime(ticketKey, session.openspec_change.name)
       : null;

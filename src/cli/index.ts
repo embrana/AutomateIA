@@ -754,7 +754,7 @@ program
         await timerReport({ dryRun: true, changeName: targetChangeName, comment: options.comment });
         return;
       }
-      if (options?.retry || timerSession?.status === 'sync_pending') {
+      if (options?.retry || timerSession?.status === 'sync_pending' || (timerSession && !targetChangeName)) {
         await archiveTimer({ comment: options?.comment, retry: options?.retry });
         return;
       }

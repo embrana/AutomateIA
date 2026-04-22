@@ -167,6 +167,43 @@ describe('SessionManager runtime bridge', () => {
     expect(reopenedSession?.created_at).not.toBe(firstSession?.created_at);
   });
 
+  it('does not inherit spec-ready ticket state or stale change references into a new session for the same ticket', async () => {
+    fetchSpy.mockImplementation(async () => jsonResponse({
+      key: 'PROJ-123',
+      fields: {
+        summary: 'Reopen the same ticket cleanly',
+        status: { name: 'In Progress' },
+        assignee: { displayName: 'Emiliano' },
+        description: {
+          type: 'doc',
+          version: 1,
+          content: [
+            {
+              type: 'paragraph',
+              content: [{ type: 'text', text: 'A reopened purpose flow should start from imported context without stale change state.' }],
+            },
+          ],
+        },
+      },
+    }));
+
+    vi.setSystemTime(new Date('2026-04-21T14:10:00.000Z'));
+    await purpose('PROJ-123', { importTicket: true, createChange: true });
+    expect((await runtimeStore.getTicketRuntime('PROJ-123'))?.state).toBe('SPEC_READY');
+    expect((await runtimeStore.getSessionRuntime('PROJ-123'))?.change_name).toBeTruthy();
+
+    vi.setSystemTime(new Date('2026-04-21T14:25:00.000Z'));
+    await cancel();
+
+    vi.setSystemTime(new Date('2026-04-21T14:30:00.000Z'));
+    await purpose('PROJ-123', { importTicket: true });
+
+    const snapshot = await runtimeStore.getLatestRuntimeSnapshot();
+    expect(snapshot?.ticket.state).toBe('CONTEXT_IMPORTED');
+    expect(snapshot?.ticket.active_change_name).toBeUndefined();
+    expect(snapshot?.session.change_name).toBeUndefined();
+  });
+
   it('records blocked and successful archive outcomes on runtime state', async () => {
     vi.setSystemTime(new Date('2026-04-21T14:10:00.000Z'));
     fetchSpy.mockResolvedValueOnce(jsonResponse({

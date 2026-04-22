@@ -16,6 +16,7 @@ import {
 } from './time.js';
 import { JiraClient, resolveJiraConfig } from './jira-client.js';
 import { SessionManager } from '../runtime/session/SessionManager.js';
+import { RuntimeStore } from '../../storage/fs/RuntimeStore.js';
 import { createChangeFromTicket, fetchImportedJiraTicket } from './ticket-change.js';
 import { buildAdfComment, buildWorklogPayload } from './worklog-payload.js';
 import type {
@@ -52,6 +53,7 @@ const WORK_KIND_LABELS: Record<TimerWorkKind, string> = {
 const ACTOR_MODES = new Set<TimerActorMode>(['human', 'ai_autonomous', 'human_agent_interaction']);
 const WORK_KINDS = new Set<TimerWorkKind>(['implementation', 'spec', 'review', 'bugfix', 'rework', 'testing', 'other']);
 const sessionManager = new SessionManager();
+const runtimeStore = new RuntimeStore();
 
 export interface ArchiveTimerOptions {
   comment?: string;
@@ -100,6 +102,33 @@ interface TimerReport {
   groups: WorklogGroup[];
   rawDurationSeconds: number;
   roundedDurationSeconds: number;
+}
+
+async function recoverPreviouslyClosedSyncPendingSession(session: TimerSession): Promise<TimerSession | null> {
+  const runtimeSession = await runtimeStore.getSessionRuntime(session.jira_issue_key);
+  if (!runtimeSession) {
+    return null;
+  }
+  if (runtimeSession.session_id !== session.session_id) {
+    return null;
+  }
+  if (runtimeSession.state !== 'CLOSED' || runtimeSession.worklog_status !== 'synced') {
+    return null;
+  }
+
+  const recovered: TimerSession = {
+    ...session,
+    status: 'closed',
+    worklog_status: 'synced',
+    sync_error: undefined,
+    ended_at: session.ended_at ?? runtimeSession.ended_at ?? undefined,
+  };
+  await archiveSession(recovered);
+  await clearActiveSession();
+
+  console.log(`Recovered previously synced OpenSpec session for ${recovered.jira_issue_key}`);
+  console.log(`Duration: ${formatDuration(recovered.rounded_duration_seconds ?? 0)}`);
+  return recovered;
 }
 
 export function validateIssueKey(issueKey: string): void {
@@ -620,8 +649,14 @@ export async function archiveTimer(options: ArchiveTimerOptions = {}): Promise<T
   const worklogConfig = resolveWorklogConfig(config.worklog);
   const comment = options.comment ?? session.comment ?? worklogConfig.comment_template;
 
-  if (session.status === 'sync_pending' && !options.retry) {
-    throw new Error("OpenSpec session is pending Jira sync.\nUse 'openspec archive --retry' to retry or 'openspec timer cancel' to discard it.");
+  if (session.status === 'sync_pending') {
+    const recoveredSession = await recoverPreviouslyClosedSyncPendingSession(session);
+    if (recoveredSession) {
+      return recoveredSession;
+    }
+    if (!options.retry) {
+      throw new Error("OpenSpec session is pending Jira sync.\nUse 'openspec archive --retry' to retry or 'openspec timer cancel' to discard it.");
+    }
   }
 
   let sessionToSync = session;
@@ -718,7 +753,17 @@ export async function archiveTimer(options: ArchiveTimerOptions = {}): Promise<T
       comment,
     };
     await saveActiveSession(pendingSession);
-    await sessionManager.syncFromTimerSession(pendingSession);
+    try {
+      await sessionManager.syncFromTimerSession(pendingSession);
+    } catch (runtimeSyncError) {
+      const recoveredSession = await recoverPreviouslyClosedSyncPendingSession(pendingSession);
+      if (recoveredSession) {
+        return recoveredSession;
+      }
+      throw new Error(
+        `Failed to create Jira worklog. Session saved as sync_pending, but runtime state could not be updated.\n${pendingSession.sync_error}\nRuntime sync error: ${getErrorMessage(runtimeSyncError)}`
+      );
+    }
     throw new Error(
       `Failed to create Jira worklog. Session saved as sync_pending. Use 'openspec archive --retry' after fixing the issue.\n${pendingSession.sync_error}`
     );

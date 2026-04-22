@@ -13,7 +13,7 @@ import {
   switchBlock,
   validateIssueKey,
 } from '../../src/core/timer/commands.js';
-import { getActiveSession, getSessionsDir } from '../../src/core/timer/store.js';
+import { getActiveSession, getSessionsDir, saveActiveSession } from '../../src/core/timer/store.js';
 import { buildAssignedTicketsJql, listAssignedTickets } from '../../src/core/timer/tickets.js';
 import { newChangeCommand } from '../../src/commands/workflow/new-change.js';
 
@@ -747,5 +747,35 @@ Permitir al Director Técnico ingresar y guardar su información general de perf
     expect(await getActiveSession()).toBeNull();
     const retryPayload = JSON.parse((fetchSpy.mock.calls[2][1] as RequestInit).body as string);
     expect(retryPayload.timeSpentSeconds).toBe(60);
+  });
+
+  it('recovers a stale sync_pending timer session when runtime already closed successfully', async () => {
+    vi.setSystemTime(new Date('2026-04-19T17:00:00.000Z'));
+    fetchSpy
+      .mockResolvedValueOnce(jsonResponse({ key: 'PROJ-123' }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'worklog-1' }, { status: 201 }));
+
+    await purpose('PROJ-123');
+
+    vi.setSystemTime(new Date('2026-04-19T17:00:17.000Z'));
+    const closedSession = await archiveTimer({ comment: 'Recovered later', addJiraArchiveComment: false });
+
+    await saveActiveSession({
+      ...closedSession,
+      status: 'sync_pending',
+      worklog_status: 'pending',
+      sync_error: 'stale local state',
+    });
+
+    const recovered = await archiveTimer();
+
+    expect(recovered).toMatchObject({
+      status: 'closed',
+      worklog_status: 'synced',
+      jira_issue_key: 'PROJ-123',
+    });
+    expect(await getActiveSession()).toBeNull();
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(consoleLogSpy).toHaveBeenCalledWith('Recovered previously synced OpenSpec session for PROJ-123');
   });
 });
