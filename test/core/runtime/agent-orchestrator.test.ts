@@ -373,7 +373,18 @@ The runtime persists a prompt artifact for the implementation step.
         status: 'PREPARED',
       },
     });
-    expect(await fs.readFile(backendPromptArtifact, 'utf-8')).toContain('# Implementation Backend Prompt');
+    const implementationReport = JSON.parse(await fs.readFile(implementationArtifact, 'utf-8'));
+    const backendPrompt = await fs.readFile(backendPromptArtifact, 'utf-8');
+
+    expect(backendPrompt).toContain('# Implementation Backend Prompt');
+    expect(backendPrompt).toContain('## Task Prompt');
+    expect(backendPrompt).not.toContain('# Likely Affected File Contents');
+    expect(backendPrompt).toContain('# Artifact Refs');
+    expect(implementationReport.backend_invocation.request_payload.metadata).toMatchObject({
+      execution_plan_step_ids: ['P1', 'P2', 'P3'],
+    });
+    expect(implementationReport.backend_invocation.request_payload.metadata).not.toHaveProperty('normalized_context');
+    expect(implementationReport.backend_invocation.request_payload.metadata).not.toHaveProperty('execution_plan');
 
     const approvalManager = new ApprovalManager();
     const approvals = await approvalManager.listPendingApprovals('PROJ-901', changeName!, 'implementation');

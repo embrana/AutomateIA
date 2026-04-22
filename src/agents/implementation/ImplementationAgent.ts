@@ -100,25 +100,39 @@ function asStringArray(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === 'string');
 }
 
-async function loadLikelyAffectedFileContext(
-  projectRoot: string,
-  executionPlan: ExecutionPlan,
-  limit = 4
-): Promise<Array<{ path: string; content: string }>> {
-  const snippets: Array<{ path: string; content: string }> = [];
-  for (const relativePath of executionPlan.files_likely_affected.slice(0, limit)) {
-    try {
-      const filePath = path.join(projectRoot, relativePath);
-      const content = await fs.readFile(filePath, 'utf-8');
-      snippets.push({
-        path: relativePath,
-        content: content.length > 12_000 ? `${content.slice(0, 12_000)}\n...[truncated]` : content,
-      });
-    } catch {
-      // Missing files are fine; the backend can choose to create them.
-    }
+function truncateText(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value;
   }
-  return snippets;
+  return `${value.slice(0, maxLength - 15)}...[truncated]`;
+}
+
+function summarizeNormalizedContext(input: NormalizedContext): Record<string, unknown> {
+  return {
+    problem_statement: truncateText(input.problem_statement, 1200),
+    acceptance_criteria: input.acceptance_criteria.slice(0, 8),
+    business_rules: input.business_rules.slice(0, 8),
+    ambiguities: input.ambiguities.slice(0, 6),
+    risks: input.risks.slice(0, 6),
+    integrations: input.integrations.slice(0, 6),
+    out_of_scope: input.out_of_scope.slice(0, 6),
+    source_summary: input.source_summary ? truncateText(input.source_summary, 400) : undefined,
+  };
+}
+
+function summarizeExecutionPlan(plan: ExecutionPlan): Record<string, unknown> {
+  return {
+    objective: truncateText(plan.objective, 500),
+    steps: plan.steps.map((step) => ({
+      id: step.id,
+      title: truncateText(step.title, 160),
+      owner: step.owner,
+    })),
+    files_likely_affected: plan.files_likely_affected.slice(0, 12),
+    test_strategy: plan.test_strategy,
+    rollback_strategy: truncateText(plan.rollback_strategy, 240),
+    estimated_risk: plan.estimated_risk,
+  };
 }
 
 async function buildImplementationPrompts(
@@ -130,7 +144,8 @@ async function buildImplementationPrompts(
     source: 'git' | 'fallback';
   }
 ): Promise<{ systemPrompt: string; taskPrompt: string; metadata: Record<string, unknown> }> {
-  const likelyAffectedFiles = await loadLikelyAffectedFileContext(context.projectRoot, input.execution_plan);
+  const contextSummary = summarizeNormalizedContext(input.normalized_context);
+  const executionPlanSummary = summarizeExecutionPlan(input.execution_plan);
   const systemPrompt = [
     'You are the ImplementationAgent for the OpenSpec agentic runtime.',
     'If your backend can edit the workspace, apply the requested code and test changes within the allowed constraints.',
@@ -138,6 +153,7 @@ async function buildImplementationPrompts(
     'workspace_actions can contain write_file, replace_in_file, delete_file, and run_command actions.',
     'Use run_command only for focused verification commands such as node --test, pnpm test, vitest, or tsc --noEmit.',
     'If you cannot edit files directly, return the intended edits as workspace_actions so the runtime can apply them locally.',
+    'Do not rely on large inline file dumps; inspect the repository and referenced artifacts directly when you need more detail.',
   ].join(' ');
 
   const taskPrompt = [
@@ -157,11 +173,11 @@ async function buildImplementationPrompts(
       retries_remaining: context.envelope.budget?.maxRetriesRemaining ?? null,
     }),
     '',
-    '# Normalized Context',
-    stringifyJson(input.normalized_context),
+    '# Context Summary',
+    stringifyJson(contextSummary),
     '',
-    '# Execution Plan',
-    stringifyJson(input.execution_plan),
+    '# Execution Plan Summary',
+    stringifyJson(executionPlanSummary),
     '',
     '# Current Workspace Snapshot',
     stringifyJson({
@@ -170,15 +186,21 @@ async function buildImplementationPrompts(
       changed_files: summarizeDiff(diffInspection.changes),
     }),
     '',
-    '# Likely Affected File Contents',
-    likelyAffectedFiles.length > 0
-      ? likelyAffectedFiles.map((file) => `## ${file.path}\n\`\`\`\n${file.content}\n\`\`\``).join('\n\n')
-      : '(No likely-affected files currently exist in the workspace.)',
+    '# Artifact Refs',
+    context.envelope.input_refs.length > 0
+      ? context.envelope.input_refs.map((ref) => `- ${ref}`).join('\n')
+      : '- None',
+    '',
+    '# Files Likely Affected',
+    input.execution_plan.files_likely_affected.length > 0
+      ? input.execution_plan.files_likely_affected.map((file) => `- ${file}`).join('\n')
+      : '- None identified yet',
     '',
     '# Instructions',
     '- Prefer minimal, production-ready edits.',
     '- Update or add tests when the plan requires them.',
     '- Respect high-risk path guards and do not exceed the allowed file/diff budget.',
+    '- Inspect files from the workspace or artifact refs instead of assuming the summaries are exhaustive.',
     '- Return JSON only.',
     '- If you want the runtime to modify files locally, include workspace_actions.',
   ].join('\n');
@@ -189,7 +211,6 @@ async function buildImplementationPrompts(
     metadata: {
       execution_plan_step_ids: input.execution_plan.steps.map((step) => step.id),
       likely_affected_files: input.execution_plan.files_likely_affected,
-      likely_affected_file_context: likelyAffectedFiles,
       input_refs: context.envelope.input_refs,
     },
   };
@@ -474,14 +495,10 @@ export class ImplementationAgent implements Agent<ImplementationAgentInput, Impl
         input_refs: context.envelope.input_refs,
         constraints: context.envelope.constraints,
         budget: context.envelope.budget,
-        system_prompt: prompt.systemPrompt,
-        task_prompt: prompt.taskPrompt,
-        metadata: {
-          ...prompt.metadata,
-          normalized_context: input.normalized_context,
-          execution_plan: input.execution_plan,
-        },
-      });
+      system_prompt: prompt.systemPrompt,
+      task_prompt: prompt.taskPrompt,
+      metadata: prompt.metadata,
+    });
       return this.toBackendInvocation(result);
     } catch (error) {
       return {

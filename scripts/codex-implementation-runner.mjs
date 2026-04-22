@@ -51,6 +51,10 @@ async function readStdinUtf8() {
 }
 
 function buildPrompt(request) {
+  const metadata = request.metadata && Object.keys(request.metadata).length > 0
+    ? JSON.stringify(request.metadata, null, 2)
+    : null;
+
   return [
     'You are serving as the Codex CLI backend for the OpenSpec ImplementationAgent.',
     'Work in analysis mode only. Do not modify files directly in the repository.',
@@ -65,9 +69,9 @@ function buildPrompt(request) {
     '# Runtime Task Prompt',
     request.task_prompt,
     '',
-    '# Runtime Metadata',
-    JSON.stringify(request.metadata ?? {}, null, 2),
-    '',
+    ...(metadata
+      ? ['# Runtime Metadata', metadata, '']
+      : []),
     '# Final Output Rules',
     '- Return JSON only.',
     '- Do not wrap the JSON in markdown fences.',
