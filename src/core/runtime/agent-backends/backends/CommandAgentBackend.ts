@@ -24,6 +24,10 @@ export class CommandAgentBackend implements AgentBackend {
       agent_name: request.agent_name,
       workspace_root: request.workspace_root,
       change_name: request.change_name,
+      backend_config: {
+        sandbox_mode: config.sandbox_mode ?? null,
+        implementation_mode: config.implementation_mode ?? null,
+      },
       constraints: request.constraints,
       budget: request.budget ?? {},
       system_prompt: request.system_prompt ?? null,

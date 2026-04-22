@@ -49,6 +49,8 @@ async function main() {
     mode: 'command',
     command: 'node',
     args: ['scripts/codex-implementation-runner.mjs'],
+    sandbox_mode: 'workspace-write',
+    implementation_mode: 'direct_edit',
     timeout_ms: 900000,
   };
   routing.implementation = backendName;
@@ -70,6 +72,8 @@ async function main() {
     backend_name: backendName,
     route: 'implementation',
     command: 'node scripts/codex-implementation-runner.mjs',
+    sandbox_mode: 'workspace-write',
+    implementation_mode: 'direct_edit',
   }, null, 2)}\n`);
 }
 

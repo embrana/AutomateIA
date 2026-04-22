@@ -32,6 +32,18 @@ function sanitizeWorkspaceActions(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function resolveSandboxMode(request) {
+  return request.backend_config?.sandbox_mode
+    ?? process.env.OSJ_CODEX_SANDBOX
+    ?? 'read-only';
+}
+
+function resolveImplementationMode(request) {
+  return request.backend_config?.implementation_mode
+    ?? process.env.OSJ_CODEX_IMPLEMENTATION_MODE
+    ?? 'workspace_actions';
+}
+
 async function readStdinUtf8() {
   if (process.stdin.isTTY) {
     return '';
@@ -54,14 +66,22 @@ function buildPrompt(request) {
   const metadata = request.metadata && Object.keys(request.metadata).length > 0
     ? JSON.stringify(request.metadata, null, 2)
     : null;
+  const implementationMode = resolveImplementationMode(request);
+  const directEdit = implementationMode === 'direct_edit';
 
   return [
     'You are serving as the Codex CLI backend for the OpenSpec ImplementationAgent.',
-    'Work in analysis mode only. Do not modify files directly in the repository.',
+    directEdit
+      ? 'You may modify files directly in the repository. Keep edits minimal, production-ready, and within the declared constraints.'
+      : 'Work in analysis mode only. Do not modify files directly in the repository.',
     'Inspect the workspace and return a final JSON object that matches the provided output schema.',
-    'Prefer proposing minimal workspace_actions so the OpenSpec runtime can apply them under policy.',
+    directEdit
+      ? 'If you make direct edits, summarize them in the final JSON. workspace_actions are optional and should only be used for extra bounded runtime actions.'
+      : 'Prefer proposing minimal workspace_actions so the OpenSpec runtime can apply them under policy.',
     'Use run_command only for focused verification commands such as node --test, pnpm exec vitest, pnpm exec tsc --noEmit, npm test, or yarn test.',
-    'If the task is ambiguous or too risky, keep workspace_actions empty and explain the limitation or question.',
+    directEdit
+      ? 'If the task is ambiguous or too risky, avoid broad edits, explain the limitation, and keep changes minimal.'
+      : 'If the task is ambiguous or too risky, keep workspace_actions empty and explain the limitation or question.',
     '',
     '# Runtime System Prompt',
     request.system_prompt ?? '(none)',
@@ -79,12 +99,12 @@ function buildPrompt(request) {
   ].join('\n');
 }
 
-async function runCodex({ workspaceRoot, prompt, outputPath }) {
+async function runCodex({ workspaceRoot, prompt, outputPath, request }) {
   const args = [
     'exec',
     '--skip-git-repo-check',
     '--sandbox',
-    process.env.OSJ_CODEX_SANDBOX ?? 'read-only',
+    resolveSandboxMode(request),
     '--output-last-message',
     outputPath,
     '--color',
@@ -192,6 +212,7 @@ async function main() {
       workspaceRoot,
       prompt,
       outputPath,
+      request,
     });
 
     const payload = {

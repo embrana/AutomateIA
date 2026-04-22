@@ -8,6 +8,8 @@ export type AgentBackendMode =
   | 'gemini_native';
 export type GeminiTransport = 'developer_api' | 'vertex';
 export type GeminiVertexAuth = 'auto' | 'access_token' | 'gcloud_adc' | 'gcloud_cli';
+export type CommandBackendSandboxMode = 'read-only' | 'workspace-write';
+export type CommandBackendImplementationMode = 'workspace_actions' | 'direct_edit';
 
 export interface AgentBackendConfig {
   mode: AgentBackendMode;
@@ -22,6 +24,8 @@ export interface AgentBackendConfig {
   command?: string;
   args?: string[];
   env?: Record<string, string>;
+  sandbox_mode?: CommandBackendSandboxMode;
+  implementation_mode?: CommandBackendImplementationMode;
   max_tokens?: number;
   temperature?: number;
   anthropic_version?: string;

@@ -315,6 +315,13 @@ describe('config-schema', () => {
               location: 'us-central1',
               gcloud_bin: 'gcloud',
             },
+            codexCli: {
+              mode: 'command',
+              command: 'node',
+              args: ['scripts/codex-implementation-runner.mjs'],
+              sandbox_mode: 'workspace-write',
+              implementation_mode: 'direct_edit',
+            },
           },
         },
       });
@@ -400,6 +407,8 @@ describe('config-schema', () => {
       expect(validateConfigKeyPath('agents.backends.shared.gemini_vertex_auth').valid).toBe(true);
       expect(validateConfigKeyPath('agents.backends.shared.project').valid).toBe(true);
       expect(validateConfigKeyPath('agents.backends.shared.gcloud_bin').valid).toBe(true);
+      expect(validateConfigKeyPath('agents.backends.shared.sandbox_mode').valid).toBe(true);
+      expect(validateConfigKeyPath('agents.backends.shared.implementation_mode').valid).toBe(true);
     });
 
     it('rejects unknown agent routing keys', () => {

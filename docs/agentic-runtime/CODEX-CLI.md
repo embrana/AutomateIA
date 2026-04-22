@@ -12,9 +12,9 @@ The current recommended integration is:
 
 1. `ImplementationAgent` routes to a `command` backend.
 2. That backend runs `node scripts/codex-implementation-runner.mjs`.
-3. The runner calls `codex exec` in read-only mode.
-4. Codex returns structured `workspace_actions`.
-5. OpenSpec applies those actions locally under runtime policy.
+3. The runner calls `codex exec` in `workspace-write` mode with `direct_edit` enabled.
+4. Codex can edit the repo directly and still return structured JSON.
+5. OpenSpec inspects the resulting diff, persists artifacts, and continues through critic/validation.
 
 ## Flow
 
@@ -24,19 +24,19 @@ flowchart TD
   B --> C["scripts/codex-implementation-runner.mjs"]
   C --> D["codex exec"]
   D --> E["Structured JSON response"]
-  E --> F["workspace_actions"]
-  F --> G["WorkspaceActionExecutor"]
-  G --> H["Local file edits and focused tests"]
+  E --> F["Direct repo edits and/or workspace_actions"]
+  F --> G["OpenSpec diff inspection"]
+  G --> H["Optional WorkspaceActionExecutor"]
   H --> I["change-report.json"]
 ```
 
 ## Why This Shape
 
-This setup keeps governance inside OpenSpec:
+This setup keeps governance inside OpenSpec while allowing faster implementation loops:
 
-- Codex can inspect the repo and reason about the change
-- OpenSpec remains the system that decides whether local edits and commands are allowed
-- policy, artifact persistence, and review/validation stay in one runtime
+- Codex can inspect and edit the repo directly for implementation work
+- OpenSpec still decides how the resulting diff is interpreted for autonomy, review, validation, and closeout
+- the runtime can still use `workspace_actions` when a backend prefers bounded runtime-applied operations
 
 ## Files
 
@@ -58,6 +58,8 @@ That configures:
 - `agents.backends.codex-cli.mode = "command"`
 - `agents.backends.codex-cli.command = "node"`
 - `agents.backends.codex-cli.args = ["scripts/codex-implementation-runner.mjs"]`
+- `agents.backends.codex-cli.sandbox_mode = "workspace-write"`
+- `agents.backends.codex-cli.implementation_mode = "direct_edit"`
 
 ## Optional Environment Overrides
 
@@ -70,7 +72,7 @@ The runner supports these optional env vars:
 
 Defaults:
 
-- sandbox defaults to `read-only`
+- sandbox defaults to `read-only` unless backend config sets `sandbox_mode`
 - no model override is sent unless `OSJ_CODEX_MODEL` is set
 - user Codex config is ignored by default so broken MCP entries or local plugins do not affect runtime execution
 
@@ -82,6 +84,6 @@ OSJ_CODEX_USE_USER_CONFIG=1
 
 ## Notes
 
-- The runner asks Codex to stay read-only and return `workspace_actions`, not to patch files directly.
-- OpenSpec still blocks writes to runtime artifacts and the active change scaffold.
-- Focused verification commands remain allowlisted by `WorkspaceActionExecutor`.
+- In `direct_edit` mode, Codex may patch files directly inside the workspace.
+- OpenSpec still evaluates the resulting diff against runtime policy and continues through critic/validation.
+- `workspace_actions` remain supported for bounded runtime-applied edits and focused verification commands.

@@ -218,6 +218,8 @@ describe('config key validation', () => {
     expect(validateConfigKeyPath('agents.backends.shared.gemini_transport').valid).toBe(true);
     expect(validateConfigKeyPath('agents.backends.shared.gemini_vertex_auth').valid).toBe(true);
     expect(validateConfigKeyPath('agents.backends.shared.gcloud_bin').valid).toBe(true);
+    expect(validateConfigKeyPath('agents.backends.shared.sandbox_mode').valid).toBe(true);
+    expect(validateConfigKeyPath('agents.backends.shared.implementation_mode').valid).toBe(true);
     expect(validateConfigKeyPath('agents.backends.shared.unknown').valid).toBe(false);
   });
 });
