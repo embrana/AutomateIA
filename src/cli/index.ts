@@ -749,16 +749,17 @@ program
     let archiveAutoBlockStarted = false;
     try {
       const timerSession = await getActiveTimerSession();
+      const targetChangeName = changeName ?? timerSession?.openspec_change?.name;
       if (options?.dryRun) {
-        await timerReport({ dryRun: true, changeName, comment: options.comment });
+        await timerReport({ dryRun: true, changeName: targetChangeName, comment: options.comment });
         return;
       }
-      if (options?.retry || timerSession?.status === 'sync_pending' || (timerSession && !changeName)) {
+      if (options?.retry || timerSession?.status === 'sync_pending') {
         await archiveTimer({ comment: options?.comment, retry: options?.retry });
         return;
       }
 
-      if (timerSession && changeName) {
+      if (timerSession && targetChangeName) {
         archiveAutoBlockStarted = await switchToAutomaticBlock(
           'ai_autonomous',
           'review',
@@ -767,16 +768,25 @@ program
       }
 
       const archiveCommand = new ArchiveCommand();
-      const archiveResult = await archiveCommand.execute(changeName, options);
+      const archiveResult = await archiveCommand.execute(targetChangeName, options);
 
-      if (timerSession && archiveResult.changeName) {
-        await sessionManager.recordArchiveOutcome({
-          ticketKey: timerSession.jira_issue_key,
-          changeName: archiveResult.changeName,
-          archived: archiveResult.archived,
-          archiveName: archiveResult.archiveName,
-          reason: archiveResult.reason,
-        });
+      if (archiveResult.changeName) {
+        if (timerSession) {
+          await sessionManager.recordArchiveOutcome({
+            ticketKey: timerSession.jira_issue_key,
+            changeName: archiveResult.changeName,
+            archived: archiveResult.archived,
+            archiveName: archiveResult.archiveName,
+            reason: archiveResult.reason,
+          });
+        } else {
+          await sessionManager.recordArchiveOutcomeForChange({
+            changeName: archiveResult.changeName,
+            archived: archiveResult.archived,
+            archiveName: archiveResult.archiveName,
+            reason: archiveResult.reason,
+          });
+        }
       }
 
       if (!archiveResult.archived) {

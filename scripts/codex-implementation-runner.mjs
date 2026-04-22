@@ -5,94 +5,6 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-const RESPONSE_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: [
-    'status',
-    'summary',
-    'files_touched',
-    'tests_added',
-    'limitations',
-    'human_questions',
-    'workspace_actions',
-  ],
-  properties: {
-    status: {
-      type: 'string',
-      enum: ['applied', 'drafted', 'blocked', 'needs_human'],
-    },
-    summary: { type: 'string' },
-    files_touched: {
-      type: 'array',
-      items: { type: 'string' },
-    },
-    tests_added: {
-      type: 'array',
-      items: { type: 'string' },
-    },
-    limitations: {
-      type: 'array',
-      items: { type: 'string' },
-    },
-    human_questions: {
-      type: 'array',
-      items: { type: 'string' },
-    },
-    workspace_actions: {
-      type: 'array',
-      items: {
-        oneOf: [
-          {
-            type: 'object',
-            additionalProperties: false,
-            required: ['type', 'path', 'content'],
-            properties: {
-              type: { const: 'write_file' },
-              path: { type: 'string' },
-              content: { type: 'string' },
-              create_only: { type: 'boolean' },
-            },
-          },
-          {
-            type: 'object',
-            additionalProperties: false,
-            required: ['type', 'path', 'old', 'new'],
-            properties: {
-              type: { const: 'replace_in_file' },
-              path: { type: 'string' },
-              old: { type: 'string' },
-              new: { type: 'string' },
-            },
-          },
-          {
-            type: 'object',
-            additionalProperties: false,
-            required: ['type', 'path'],
-            properties: {
-              type: { const: 'delete_file' },
-              path: { type: 'string' },
-            },
-          },
-          {
-            type: 'object',
-            additionalProperties: false,
-            required: ['type', 'command'],
-            properties: {
-              type: { const: 'run_command' },
-              command: {
-                type: 'array',
-                items: { type: 'string' },
-              },
-              reason: { type: 'string' },
-            },
-          },
-        ],
-      },
-    },
-  },
-};
-
 function parseJsonOrThrow(value, label) {
   try {
     return JSON.parse(value);
@@ -163,14 +75,12 @@ function buildPrompt(request) {
   ].join('\n');
 }
 
-async function runCodex({ workspaceRoot, prompt, schemaPath, outputPath }) {
+async function runCodex({ workspaceRoot, prompt, outputPath }) {
   const args = [
     'exec',
     '--skip-git-repo-check',
     '--sandbox',
     process.env.OSJ_CODEX_SANDBOX ?? 'read-only',
-    '--output-schema',
-    schemaPath,
     '--output-last-message',
     outputPath,
     '--color',
@@ -270,16 +180,13 @@ async function main() {
     : process.cwd();
 
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'openspec-codex-runner-'));
-  const schemaPath = path.join(tempDir, 'response.schema.json');
   const outputPath = path.join(tempDir, 'last-message.json');
 
   try {
-    await fs.writeFile(schemaPath, JSON.stringify(RESPONSE_SCHEMA, null, 2), 'utf-8');
     const prompt = buildPrompt(request);
     const result = await runCodex({
       workspaceRoot,
       prompt,
-      schemaPath,
       outputPath,
     });
 

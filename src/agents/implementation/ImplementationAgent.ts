@@ -208,7 +208,22 @@ async function estimateUntrackedLines(projectRoot: string, files: string[]): Pro
   return total;
 }
 
+function isExcludedPath(file: string, excludedPrefixes: string[]): boolean {
+  return excludedPrefixes.some((prefix) => file.startsWith(prefix));
+}
+
 async function inspectWorkspaceDiff(projectRoot: string): Promise<{
+  changes: Array<{ file: string; changeType: ImplementationChange['change_type'] }>;
+  diffLines: number;
+  source: 'git' | 'fallback';
+}> {
+  return inspectWorkspaceDiffWithExclusions(projectRoot, ['.openspec/']);
+}
+
+async function inspectWorkspaceDiffWithExclusions(
+  projectRoot: string,
+  excludedPrefixes: string[]
+): Promise<{
   changes: Array<{ file: string; changeType: ImplementationChange['change_type'] }>;
   diffLines: number;
   source: 'git' | 'fallback';
@@ -223,7 +238,7 @@ async function inspectWorkspaceDiff(projectRoot: string): Promise<{
       cwd: gitRoot,
       encoding: 'utf8',
     });
-    const entries = statusRaw
+    const rawEntries = statusRaw
       .split('\n')
       .map((line) => line.trimEnd())
       .filter(Boolean)
@@ -238,8 +253,8 @@ async function inspectWorkspaceDiff(projectRoot: string): Promise<{
               ? 'deleted'
               : 'modified';
         return { file, changeType, status };
-      })
-      .filter((entry) => entry.file && !entry.file.startsWith('.openspec/runtime/'));
+      });
+    const entries = rawEntries.filter((entry) => entry.file && !isExcludedPath(entry.file, excludedPrefixes));
 
     const { stdout: numstatRaw } = await execFileAsync('git', ['diff', '--numstat', '--'], {
       cwd: gitRoot,
@@ -250,7 +265,7 @@ async function inspectWorkspaceDiff(projectRoot: string): Promise<{
       .filter(Boolean)
       .reduce((sum, line) => {
         const [added, removed, file] = line.split('\t');
-        if (!file || file.startsWith('.openspec/runtime/')) {
+        if (!file || isExcludedPath(file, excludedPrefixes)) {
           return sum;
         }
         return sum + (Number.parseInt(added, 10) || 0) + (Number.parseInt(removed, 10) || 0);
@@ -293,7 +308,11 @@ export class ImplementationAgent implements Agent<ImplementationAgentInput, Impl
       throw new Error('ImplementationAgent requires an active change. Run the spec and planning agents first.');
     }
 
-    const initialDiffInspection = await inspectWorkspaceDiff(context.projectRoot);
+    const excludedPrefixes = [
+      '.openspec/',
+      `openspec/changes/${changeName}/`,
+    ];
+    const initialDiffInspection = await inspectWorkspaceDiffWithExclusions(context.projectRoot, excludedPrefixes);
     const implementationPrompt = await buildImplementationPrompts(input, context, initialDiffInspection);
     const backendInvocation = await this.invokeConfiguredBackend(input, context, implementationPrompt);
     const workspaceActions = backendInvocation.proposed_workspace_actions ?? [];
@@ -337,11 +356,8 @@ export class ImplementationAgent implements Agent<ImplementationAgentInput, Impl
       }
     }
 
-    const diffInspection = await inspectWorkspaceDiff(context.projectRoot);
-    const relevantChanges = diffInspection.changes.filter((entry) =>
-      !entry.file.startsWith('.openspec/runtime/')
-      && !entry.file.startsWith(`openspec/changes/${changeName}/`)
-    );
+    const diffInspection = await inspectWorkspaceDiffWithExclusions(context.projectRoot, excludedPrefixes);
+    const relevantChanges = diffInspection.changes;
     const scope = this.autonomyPolicy.evaluateImplementationScope({
       autonomyLevel: context.envelope.autonomy_level,
       changedFiles: relevantChanges.map((entry) => entry.file),

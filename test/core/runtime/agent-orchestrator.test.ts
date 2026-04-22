@@ -209,9 +209,6 @@ The runtime stores critic and validation artifacts for the active change.
 
     const results = await orchestrator.orchestrateUntil('validation');
     expect(results.map((item) => item.agent)).toEqual([
-      'context_agent',
-      'spec_agent',
-      'planning_agent',
       'implementation_agent',
       'critic_agent',
       'validation_agent',
@@ -592,9 +589,6 @@ The runtime creates an approval artifact before archive when autonomy is assiste
 
     const results = await orchestrator.orchestrateUntil('delivery');
     expect(results.map((item) => item.agent)).toEqual([
-      'context_agent',
-      'spec_agent',
-      'planning_agent',
       'implementation_agent',
       'critic_agent',
       'validation_agent',
@@ -639,5 +633,121 @@ The runtime creates an approval artifact before archive when autonomy is assiste
     expect((await runtimeStore.getTicketRuntime('PROJ-900'))?.state).toBe('READY_FOR_ARCHIVE');
     expect((await runtimeStore.getSessionRuntime('PROJ-900'))?.state).toBe('ACTIVE');
     expect((await runtimeStore.getChangeRuntime('PROJ-900', changeName!))?.archive_eligible).toBe(true);
+  });
+
+  it('ignores active change scaffold files when evaluating implementation diff budget', async () => {
+    vi.useRealTimers();
+    execSync('git init', { cwd: tempDir, stdio: 'ignore' });
+    execSync('git config user.email dev@example.com', { cwd: tempDir, stdio: 'ignore' });
+    execSync('git config user.name "OpenSpec Tests"', { cwd: tempDir, stdio: 'ignore' });
+    execSync('git add .', { cwd: tempDir, stdio: 'ignore' });
+    execSync('git commit -m "Initial commit"', { cwd: tempDir, stdio: 'ignore' });
+
+    saveGlobalConfig({
+      featureFlags: {},
+      profile: 'core',
+      delivery: 'both',
+      jira: {
+        base_url: 'https://example.atlassian.net',
+        email: 'dev@example.com',
+        api_token: 'token',
+      },
+      worklog: {
+        rounding: 'minute',
+        min_seconds: 60,
+        comment_template: 'OpenSpec execution session',
+        track_metadata_locally: true,
+      },
+      agents: {
+        default_backend: 'implementation-api',
+        backends: {
+          'implementation-api': {
+            mode: 'openai_compatible',
+            base_url: 'https://example.com',
+            model: 'gpt-test',
+            api_key_env: 'OPENAI_API_KEY',
+          },
+        },
+      },
+    });
+    process.env.OPENAI_API_KEY = 'secret-key';
+
+    fetchSpy
+      .mockResolvedValueOnce(jsonResponse({
+        key: 'PROJ-903',
+        fields: {
+          summary: 'Ignore active change scaffold in implementation policy',
+          status: { name: 'In Progress' },
+          assignee: { displayName: 'Emiliano' },
+          description: `## Context
+
+We need implementation policy to ignore the active change scaffold.
+
+## Acceptance Criteria
+
+### CA-1 - Ignore scaffold diff
+The implementation budget excludes files created under the active change scaffold.
+`,
+        },
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                status: 'drafted',
+                summary: 'No code changes proposed.',
+                files_touched: [],
+                tests_added: [],
+                limitations: [],
+                human_questions: [],
+                workspace_actions: [],
+              }),
+            },
+          },
+        ],
+      }));
+
+    await purpose('PROJ-903', { importTicket: true });
+    const orchestrator = new AgentOrchestrator();
+    await orchestrator.orchestrateUntil('planning');
+
+    const runtimeStore = new RuntimeStore();
+    const changeName = (await runtimeStore.getSessionRuntime('PROJ-903'))?.change_name;
+    expect(changeName).toBeTruthy();
+
+    await fs.writeFile(
+      path.join(tempDir, 'openspec', 'changes', changeName!, 'specs', changeName!, 'spec.md'),
+      `${'Large scaffold line\n'.repeat(1200)}`,
+      'utf-8'
+    );
+
+    const results = await orchestrator.orchestrateUntil('implementation');
+    const implementation = results.at(-1);
+    expect(implementation?.agent).toBe('implementation_agent');
+    expect(implementation?.status).toBe('SUCCEEDED');
+
+    const implementationArtifact = path.join(
+      tempDir,
+      '.openspec',
+      'runtime',
+      'tickets',
+      'PROJ-903',
+      'changes',
+      changeName!,
+      'implementation',
+      'change-report.json'
+    );
+    const implementationReport = JSON.parse(await fs.readFile(implementationArtifact, 'utf-8'));
+    expect(implementationReport).toMatchObject({
+      scope_assessment: {
+        requires_human_approval: false,
+      },
+      backend_invocation: {
+        status: 'EXECUTED',
+      },
+    });
+    expect(implementationReport.scope_assessment.changed_files_count).toBeLessThanOrEqual(1);
+    expect(implementationReport.scope_assessment.diff_lines).toBeLessThan(800);
   });
 });
