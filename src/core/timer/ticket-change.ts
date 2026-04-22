@@ -18,13 +18,13 @@ export interface CreateChangeFromTicketOptions {
   schema?: string;
 }
 
-interface AcceptanceCriterion {
+export interface AcceptanceCriterion {
   id: string;
   title: string;
   body: string;
 }
 
-interface StructuredSdd {
+export interface StructuredSdd {
   title: string;
   context: string;
   goals: string;
@@ -115,7 +115,7 @@ function parseAcceptanceCriteria(section: string): AcceptanceCriterion[] {
   });
 }
 
-function parseStructuredSdd(description: string, fallbackTitle: string): StructuredSdd | null {
+export function parseStructuredSdd(description: string, fallbackTitle: string): StructuredSdd | null {
   const acceptanceSection = getSection(description, 'Acceptance Criteria');
   const acceptanceCriteria = parseAcceptanceCriteria(acceptanceSection);
   const businessRules = getSection(description, 'Business Rules');

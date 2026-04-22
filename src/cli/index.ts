@@ -36,6 +36,10 @@ import {
 } from '../core/timer/commands.js';
 import { buildBlockedArchiveComment } from '../core/timer/archive-comment.js';
 import { getActiveSession as getActiveTimerSession } from '../core/timer/store.js';
+import { RuntimeStatusCommand } from '../core/runtime/status.js';
+import { SessionManager } from '../core/runtime/session/SessionManager.js';
+import { AgentOrchestrator } from '../core/runtime/orchestration/AgentOrchestrator.js';
+import { ApprovalManager } from '../core/runtime/approvals/ApprovalManager.js';
 import { formatTicketSummary, listAssignedTickets } from '../core/timer/tickets.js';
 import {
   statusCommand,
@@ -58,6 +62,10 @@ const require = createRequire(import.meta.url);
 const { version } = require('../../package.json');
 const invokedName = path.basename(process.argv[1] || 'osj');
 const cliName = invokedName === 'openspec.js' ? 'osj' : invokedName;
+const runtimeStatusCommand = new RuntimeStatusCommand();
+const sessionManager = new SessionManager();
+const agentOrchestrator = new AgentOrchestrator();
+const approvalManager = new ApprovalManager();
 
 program.name(cliName);
 
@@ -118,6 +126,42 @@ function getCommandPath(command: Command): string {
   }
 
   return names.join(':') || 'openspec';
+}
+
+function printAgentExecutionSummary(summary: { agent: string; status: string; recommended_next_action: string; artifact_refs: string[] }): void {
+  console.log(`Agent: ${summary.agent}`);
+  console.log(`Status: ${summary.status}`);
+  console.log(`Next action: ${summary.recommended_next_action}`);
+  if (summary.artifact_refs.length > 0) {
+    console.log('Artifacts:');
+    for (const ref of summary.artifact_refs) {
+      console.log(`- ${ref}`);
+    }
+  }
+}
+
+function printApproval(approval: {
+  approval_id: string;
+  scope: string;
+  status: string;
+  reason: string;
+  change_name?: string;
+  resolved_at?: string | null;
+  resolution_reason?: string;
+}): void {
+  console.log(`Approval: ${approval.approval_id}`);
+  console.log(`Scope: ${approval.scope}`);
+  console.log(`Status: ${approval.status}`);
+  if (approval.change_name) {
+    console.log(`Change: ${approval.change_name}`);
+  }
+  console.log(`Reason: ${approval.reason}`);
+  if (approval.resolved_at) {
+    console.log(`Resolved at: ${approval.resolved_at}`);
+  }
+  if (approval.resolution_reason) {
+    console.log(`Resolution reason: ${approval.resolution_reason}`);
+  }
 }
 
 program
@@ -401,6 +445,154 @@ const timerCmd = program
   .command('timer')
   .description('Manage the OpenSpec work timer');
 
+const runtimeCmd = program
+  .command('runtime')
+  .description('Inspect agentic runtime state');
+
+const agentCmd = program
+  .command('agent')
+  .description('Run runtime agents');
+
+const orchestrateCmd = program
+  .command('orchestrate')
+  .description('Run agentic orchestration steps');
+
+const approvalCmd = program
+  .command('approval')
+  .description('Inspect and resolve runtime approvals');
+
+runtimeCmd
+  .command('status')
+  .description('Show the current or latest OpenSpec runtime state')
+  .option('--json', 'Output runtime state as JSON')
+  .action(async (options: { json?: boolean }) => {
+    try {
+      await runtimeStatusCommand.execute(options);
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+agentCmd
+  .command('run <agent>')
+  .description('Run a runtime agent: context, spec, planning, implementation, critic, validation, delivery')
+  .action(async (agent: string) => {
+    try {
+      const normalized = agent.trim().toLowerCase();
+      const map = {
+        context: 'context_agent',
+        spec: 'spec_agent',
+        planning: 'planning_agent',
+        implementation: 'implementation_agent',
+        critic: 'critic_agent',
+        validation: 'validation_agent',
+        delivery: 'delivery_agent',
+      } as const;
+      if (!(normalized in map)) {
+        throw new Error(`Unknown agent '${agent}'. Use one of: context, spec, planning, implementation, critic, validation, delivery.`);
+      }
+      const summary = await agentOrchestrator.runAgent(map[normalized as keyof typeof map]);
+      printAgentExecutionSummary(summary);
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+orchestrateCmd
+  .option('--from-session', 'Run orchestration using the active runtime session')
+  .option('--until <stage>', 'Run until stage: context, spec, planning, implementation, critic, validation, delivery', 'planning')
+  .action(async (options: { fromSession?: boolean; until?: string }) => {
+    try {
+      const until = (options.until ?? 'planning').trim().toLowerCase();
+      if (
+        until !== 'context'
+        && until !== 'spec'
+        && until !== 'planning'
+        && until !== 'implementation'
+        && until !== 'critic'
+        && until !== 'validation'
+        && until !== 'delivery'
+      ) {
+        throw new Error(`Unsupported --until value '${options.until}'. Use context, spec, planning, implementation, critic, validation, or delivery.`);
+      }
+      const results = await agentOrchestrator.orchestrateUntil(until);
+      for (const summary of results) {
+        printAgentExecutionSummary(summary);
+      }
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+approvalCmd
+  .command('show')
+  .description('Show approvals for the current or latest runtime ticket')
+  .option('--json', 'Output approvals as JSON')
+  .action(async (options: { json?: boolean }) => {
+    try {
+      const snapshot = await sessionManager.getCurrentRuntimeSnapshot();
+      if (!snapshot) {
+        console.log('No OpenSpec runtime state found.');
+        return;
+      }
+
+      const approvals = await approvalManager.listApprovalsForTicket(snapshot.ticket.ticket_key);
+      if (options.json) {
+        console.log(JSON.stringify(approvals, null, 2));
+        return;
+      }
+
+      if (approvals.length === 0) {
+        console.log('No approvals found for the current runtime ticket.');
+        return;
+      }
+
+      for (const approval of approvals) {
+        printApproval(approval);
+      }
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+approvalCmd
+  .command('accept <approval-id>')
+  .description('Approve a pending runtime approval')
+  .option('--reason <text>', 'Optional approval note')
+  .action(async (approvalId: string, options: { reason?: string }) => {
+    try {
+      const approval = await approvalManager.resolveApproval(approvalId, 'APPROVED', options.reason);
+      printApproval(approval);
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+approvalCmd
+  .command('reject <approval-id>')
+  .description('Reject a pending runtime approval')
+  .requiredOption('--reason <text>', 'Reason for rejecting the approval')
+  .action(async (approvalId: string, options: { reason: string }) => {
+    try {
+      const approval = await approvalManager.resolveApproval(approvalId, 'REJECTED', options.reason);
+      printApproval(approval);
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
 timerCmd
   .command('start')
   .description('Start a manual human timer for a Jira issue')
@@ -576,6 +768,16 @@ program
 
       const archiveCommand = new ArchiveCommand();
       const archiveResult = await archiveCommand.execute(changeName, options);
+
+      if (timerSession && archiveResult.changeName) {
+        await sessionManager.recordArchiveOutcome({
+          ticketKey: timerSession.jira_issue_key,
+          changeName: archiveResult.changeName,
+          archived: archiveResult.archived,
+          archiveName: archiveResult.archiveName,
+          reason: archiveResult.reason,
+        });
+      }
 
       if (!archiveResult.archived) {
         if (timerSession) {

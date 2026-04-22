@@ -201,6 +201,92 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
     ],
   },
   {
+    name: 'runtime',
+    description: 'Inspect agentic runtime state',
+    flags: [],
+    subcommands: [
+      {
+        name: 'status',
+        description: 'Show the current or latest OpenSpec runtime state',
+        flags: [
+          {
+            name: 'json',
+            description: 'Output runtime state as JSON',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    name: 'agent',
+    description: 'Run runtime agents',
+    flags: [],
+    subcommands: [
+      {
+        name: 'run',
+        description: 'Run a runtime agent: context, spec, planning, implementation, critic, validation, delivery',
+        acceptsPositional: true,
+        flags: [],
+      },
+    ],
+  },
+  {
+    name: 'orchestrate',
+    description: 'Run agentic orchestration steps',
+    flags: [
+      {
+        name: 'from-session',
+        description: 'Run orchestration using the active runtime session',
+      },
+      {
+        name: 'until',
+        description: 'Run until stage: context, spec, planning, implementation, critic, validation, delivery',
+        takesValue: true,
+      },
+    ],
+  },
+  {
+    name: 'approval',
+    description: 'Inspect and resolve runtime approvals',
+    flags: [],
+    subcommands: [
+      {
+        name: 'show',
+        description: 'Show approvals for the current or latest runtime ticket',
+        flags: [
+          {
+            name: 'json',
+            description: 'Output approvals as JSON',
+          },
+        ],
+      },
+      {
+        name: 'accept',
+        description: 'Approve a pending runtime approval',
+        acceptsPositional: true,
+        flags: [
+          {
+            name: 'reason',
+            description: 'Optional approval note',
+            takesValue: true,
+          },
+        ],
+      },
+      {
+        name: 'reject',
+        description: 'Reject a pending runtime approval',
+        acceptsPositional: true,
+        flags: [
+          {
+            name: 'reason',
+            description: 'Reason for rejecting the approval',
+            takesValue: true,
+          },
+        ],
+      },
+    ],
+  },
+  {
     name: 'feedback',
     description: 'Submit feedback about OpenSpec',
     acceptsPositional: true,

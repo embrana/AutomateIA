@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AGENT_BACKEND_ROUTE_KEYS } from './runtime/agent-backends/routes.js';
 
 /**
  * Zod schema for global OpenSpec configuration.
@@ -45,6 +46,55 @@ export const GlobalConfigSchema = z
         comment_template: 'OpenSpec execution session',
         track_metadata_locally: true,
       }),
+    agents: z
+      .object({
+        default_backend: z.string().min(1).optional(),
+        routing: z
+          .object(
+            Object.fromEntries(
+              AGENT_BACKEND_ROUTE_KEYS.map((key) => [key, z.string().min(1).optional()])
+            ) as Record<(typeof AGENT_BACKEND_ROUTE_KEYS)[number], z.ZodOptional<z.ZodString>>
+          )
+          .partial()
+          .optional()
+          .default({}),
+        backends: z
+          .record(
+            z.string(),
+            z.object({
+              mode: z.enum(['openai_compatible', 'command', 'manual', 'anthropic_native', 'gemini_native']),
+              model: z.string().min(1).optional(),
+              base_url: z.string().url().optional(),
+              request_path: z.string().min(1).optional(),
+              api_key: z.string().min(1).optional(),
+              api_key_env: z.string().min(1).optional(),
+              access_token: z.string().min(1).optional(),
+              access_token_env: z.string().min(1).optional(),
+              headers: z.record(z.string(), z.string()).optional(),
+              command: z.string().min(1).optional(),
+              args: z.array(z.string()).optional(),
+              env: z.record(z.string(), z.string()).optional(),
+              max_tokens: z.number().int().positive().optional(),
+              temperature: z.number().min(0).max(2).optional(),
+              anthropic_version: z.string().min(1).optional(),
+              api_version: z.string().min(1).optional(),
+              gemini_transport: z.enum(['developer_api', 'vertex']).optional(),
+              gemini_vertex_auth: z.enum(['auto', 'access_token', 'gcloud_adc', 'gcloud_cli']).optional(),
+              project: z.string().min(1).optional(),
+              location: z.string().min(1).optional(),
+              publisher: z.string().min(1).optional(),
+              gcloud_bin: z.string().min(1).optional(),
+              timeout_ms: z.number().int().positive().optional(),
+            }).passthrough()
+          )
+          .optional()
+          .default({}),
+      })
+      .optional()
+      .default({
+        routing: {},
+        backends: {},
+      }),
   })
   .passthrough();
 
@@ -57,6 +107,10 @@ export const DEFAULT_CONFIG: GlobalConfigType = {
   featureFlags: {},
   profile: 'core',
   delivery: 'both',
+  agents: {
+    routing: {},
+    backends: {},
+  },
   jira: {},
   worklog: {
     rounding: 'minute',
@@ -74,6 +128,33 @@ const WORKLOG_KEYS = new Set([
   'min_seconds',
   'comment_template',
   'track_metadata_locally',
+]);
+const AGENTS_KEYS = new Set(['default_backend', 'routing', 'backends']);
+const AGENT_ROUTING_KEYS = new Set<string>(AGENT_BACKEND_ROUTE_KEYS);
+const AGENT_BACKEND_KEYS = new Set([
+  'mode',
+  'model',
+  'base_url',
+  'request_path',
+  'api_key',
+  'api_key_env',
+  'access_token',
+  'access_token_env',
+  'headers',
+  'command',
+  'args',
+  'env',
+  'max_tokens',
+  'temperature',
+  'anthropic_version',
+  'api_version',
+  'gemini_transport',
+  'gemini_vertex_auth',
+  'project',
+  'location',
+  'publisher',
+  'gcloud_bin',
+  'timeout_ms',
 ]);
 
 /**
@@ -123,6 +204,53 @@ export function validateConfigKeyPath(path: string): { valid: boolean; reason?: 
       return { valid: false, reason: `Unknown worklog key "${rawKeys[1]}"` };
     }
     return { valid: true };
+  }
+
+  if (rootKey === 'agents') {
+    if (rawKeys.length === 1) {
+      return { valid: true };
+    }
+    if (!AGENTS_KEYS.has(rawKeys[1])) {
+      return { valid: false, reason: `Unknown agents key "${rawKeys[1]}"` };
+    }
+    if (rawKeys[1] === 'default_backend') {
+      return rawKeys.length === 2
+        ? { valid: true }
+        : { valid: false, reason: 'agents.default_backend does not support nested keys' };
+    }
+    if (rawKeys[1] === 'routing') {
+      if (rawKeys.length === 2) {
+        return { valid: true };
+      }
+      if (rawKeys.length !== 3) {
+        return { valid: false, reason: 'agents.routing values do not support deeply nested keys' };
+      }
+      if (!AGENT_ROUTING_KEYS.has(rawKeys[2])) {
+        return { valid: false, reason: `Unknown agent routing key "${rawKeys[2]}"` };
+      }
+      return { valid: true };
+    }
+    if (rawKeys[1] === 'backends') {
+      if (rawKeys.length < 3) {
+        return { valid: true };
+      }
+      if (rawKeys.length === 3) {
+        return { valid: true };
+      }
+      if (!AGENT_BACKEND_KEYS.has(rawKeys[3])) {
+        return { valid: false, reason: `Unknown backend config key "${rawKeys[3]}"` };
+      }
+      if (rawKeys[3] === 'headers' || rawKeys[3] === 'env') {
+        if (rawKeys.length > 5) {
+          return { valid: false, reason: `${rawKeys.slice(0, 4).join('.')} does not support deeply nested keys` };
+        }
+        return { valid: true };
+      }
+      if (rawKeys.length > 4) {
+        return { valid: false, reason: `${rawKeys.slice(0, 4).join('.')} does not support nested keys` };
+      }
+      return { valid: true };
+    }
   }
 
   if (rawKeys.length > 1) {

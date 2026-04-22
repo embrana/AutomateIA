@@ -7,6 +7,7 @@ import {
   coerceValue,
   formatValueYaml,
   validateConfig,
+  validateConfigKeyPath,
   GlobalConfigSchema,
   DEFAULT_CONFIG,
 } from '../../src/core/config-schema.js';
@@ -274,6 +275,52 @@ describe('config-schema', () => {
       const result = validateConfig({ featureFlags: { flag: 123 } });
       expect(result.success).toBe(false);
     });
+
+    it('should accept agent backend routing config', () => {
+      const result = validateConfig({
+        agents: {
+          default_backend: 'shared',
+          routing: {
+            implementation: 'shared',
+            critic: 'shared',
+          },
+          backends: {
+            shared: {
+              mode: 'openai_compatible',
+              base_url: 'https://example.com',
+              model: 'gpt-test',
+              api_key_env: 'OPENAI_API_KEY',
+              headers: {
+                'X-Org': 'runtime',
+              },
+            },
+            anthropic: {
+              mode: 'anthropic_native',
+              model: 'claude-sonnet-4-20250514',
+              api_key_env: 'ANTHROPIC_API_KEY',
+              anthropic_version: '2023-06-01',
+            },
+            gemini: {
+              mode: 'gemini_native',
+              model: 'gemini-2.5-flash',
+              api_key_env: 'GEMINI_API_KEY',
+              gemini_transport: 'developer_api',
+            },
+            geminiVertex: {
+              mode: 'gemini_native',
+              model: 'gemini-2.5-pro',
+              gemini_transport: 'vertex',
+              gemini_vertex_auth: 'auto',
+              project: 'demo-project',
+              location: 'us-central1',
+              gcloud_bin: 'gcloud',
+            },
+          },
+        },
+      });
+
+      expect(result.success).toBe(true);
+    });
   });
 
   describe('config set simulation', () => {
@@ -330,11 +377,43 @@ describe('config-schema', () => {
       const result = GlobalConfigSchema.parse({});
       expect(result.featureFlags).toEqual({});
     });
+
+    it('should preserve empty agents defaults', () => {
+      const result = GlobalConfigSchema.parse({});
+      expect(result.agents).toEqual({ routing: {}, backends: {} });
+    });
+  });
+
+  describe('validateConfigKeyPath', () => {
+    it('allows agents routing keys', () => {
+      expect(validateConfigKeyPath('agents.routing.implementation').valid).toBe(true);
+      expect(validateConfigKeyPath('agents.routing.validation').valid).toBe(true);
+    });
+
+    it('allows agent backend nested keys', () => {
+      expect(validateConfigKeyPath('agents.backends.shared.mode').valid).toBe(true);
+      expect(validateConfigKeyPath('agents.backends.shared.base_url').valid).toBe(true);
+      expect(validateConfigKeyPath('agents.backends.shared.headers.Authorization').valid).toBe(true);
+      expect(validateConfigKeyPath('agents.backends.shared.env.OPENAI_API_KEY').valid).toBe(true);
+      expect(validateConfigKeyPath('agents.backends.shared.access_token').valid).toBe(true);
+      expect(validateConfigKeyPath('agents.backends.shared.gemini_transport').valid).toBe(true);
+      expect(validateConfigKeyPath('agents.backends.shared.gemini_vertex_auth').valid).toBe(true);
+      expect(validateConfigKeyPath('agents.backends.shared.project').valid).toBe(true);
+      expect(validateConfigKeyPath('agents.backends.shared.gcloud_bin').valid).toBe(true);
+    });
+
+    it('rejects unknown agent routing keys', () => {
+      expect(validateConfigKeyPath('agents.routing.unknown').valid).toBe(false);
+    });
   });
 
   describe('DEFAULT_CONFIG', () => {
     it('should have empty featureFlags', () => {
       expect(DEFAULT_CONFIG.featureFlags).toEqual({});
+    });
+
+    it('should have empty agents config by default', () => {
+      expect(DEFAULT_CONFIG.agents).toEqual({ routing: {}, backends: {} });
     });
   });
 });

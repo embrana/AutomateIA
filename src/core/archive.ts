@@ -9,6 +9,7 @@ import {
   writeUpdatedSpec,
   type SpecUpdate,
 } from './specs-apply.js';
+import { ApprovalManager } from './runtime/approvals/ApprovalManager.js';
 
 export interface ArchiveResult {
   archived: boolean;
@@ -56,6 +57,8 @@ async function moveDirectory(src: string, dest: string): Promise<void> {
 }
 
 export class ArchiveCommand {
+  constructor(private readonly approvalManager = new ApprovalManager()) {}
+
   async execute(
     changeName?: string,
     options: { yes?: boolean; skipSpecs?: boolean; noValidate?: boolean; validate?: boolean } = {}
@@ -97,6 +100,19 @@ export class ArchiveCommand {
       }
     } catch {
       throw new Error(`Change '${changeName}' not found.`);
+    }
+
+    const archiveGovernance = await this.approvalManager.evaluateArchiveGovernance(changeName);
+    if (archiveGovernance.governed && !archiveGovernance.allowed) {
+      const message = archiveGovernance.reason ?? 'Archive is blocked by the current runtime governance policy.';
+      console.log(chalk.red(message));
+      diagnostics.push(`ERROR: ${message}`);
+      return {
+        archived: false,
+        changeName,
+        reason: message,
+        diagnostics,
+      };
     }
 
     const skipValidation = options.validate === false || options.noValidate === true;

@@ -10,6 +10,7 @@ import { createChange, validateChangeName } from '../../utils/change-utils.js';
 import { validateSchemaExists } from './shared.js';
 import { createChangeFromJiraIssue, createChangeFromTicket, fetchImportedJiraTicket } from '../../core/timer/ticket-change.js';
 import { getActiveSession, saveActiveSession } from '../../core/timer/store.js';
+import { SessionManager } from '../../core/runtime/session/SessionManager.js';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -28,6 +29,7 @@ export interface NewChangeOptions {
 
 export async function newChangeCommand(name: string | undefined, options: NewChangeOptions): Promise<void> {
   const projectRoot = process.cwd();
+  const sessionManager = new SessionManager();
 
   // Validate schema if provided
   if (options.schema) {
@@ -47,14 +49,16 @@ export async function newChangeCommand(name: string | undefined, options: NewCha
       return;
     }
 
-    await saveActiveSession({
+    const updatedSession = {
       ...activeSession,
       openspec_change: {
         name: change.name,
         path: change.path,
         schema: change.schema,
       },
-    }, projectRoot);
+    };
+    await saveActiveSession(updatedSession, projectRoot);
+    await sessionManager.syncFromTimerSession(updatedSession);
   }
 
   if (options.fromSession) {

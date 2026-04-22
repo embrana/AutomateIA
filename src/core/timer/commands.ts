@@ -15,6 +15,7 @@ import {
   toUtcIso,
 } from './time.js';
 import { JiraClient, resolveJiraConfig } from './jira-client.js';
+import { SessionManager } from '../runtime/session/SessionManager.js';
 import { createChangeFromTicket, fetchImportedJiraTicket } from './ticket-change.js';
 import { buildAdfComment, buildWorklogPayload } from './worklog-payload.js';
 import type {
@@ -50,6 +51,7 @@ const WORK_KIND_LABELS: Record<TimerWorkKind, string> = {
 
 const ACTOR_MODES = new Set<TimerActorMode>(['human', 'ai_autonomous', 'human_agent_interaction']);
 const WORK_KINDS = new Set<TimerWorkKind>(['implementation', 'spec', 'review', 'bugfix', 'rework', 'testing', 'other']);
+const sessionManager = new SessionManager();
 
 export interface ArchiveTimerOptions {
   comment?: string;
@@ -525,6 +527,7 @@ export async function purpose(issueKey: string, options: PurposeOptions = {}): P
   }
 
   await saveActiveSession(session);
+  await sessionManager.syncFromTimerSession(session);
   console.log(`Started OpenSpec session for ${issueKey} at ${session.started_at_local}`);
   if (importedTicket) {
     console.log(`Imported Jira ticket context: ${importedTicket.key} - ${importedTicket.summary}`);
@@ -587,6 +590,7 @@ export async function startManualHumanTimer(
   };
 
   await saveActiveSession(session);
+  await sessionManager.syncFromTimerSession(session);
   console.log(`Started manual human OpenSpec timer for ${issueKey} at ${session.started_at_local}`);
   console.log(`Current block: human / ${kind}`);
   if (importedTicket) {
@@ -681,6 +685,7 @@ export async function archiveTimer(options: ArchiveTimerOptions = {}): Promise<T
       sync_error: undefined,
     };
 
+    await sessionManager.syncFromTimerSession(closedSession);
     await archiveSession(closedSession);
     await clearActiveSession();
 
@@ -713,6 +718,7 @@ export async function archiveTimer(options: ArchiveTimerOptions = {}): Promise<T
       comment,
     };
     await saveActiveSession(pendingSession);
+    await sessionManager.syncFromTimerSession(pendingSession);
     throw new Error(
       `Failed to create Jira worklog. Session saved as sync_pending. Use 'openspec archive --retry' after fixing the issue.\n${pendingSession.sync_error}`
     );
@@ -841,6 +847,7 @@ export async function switchBlock(options: SwitchBlockOptions): Promise<void> {
   );
 
   await saveActiveSession(switchedSession);
+  await sessionManager.syncFromTimerSession(switchedSession);
   console.log(`Switched OpenSpec timer block for ${session.jira_issue_key}`);
   console.log(`Current block: ${options.mode} / ${options.kind}`);
 }
@@ -856,7 +863,9 @@ export async function switchToAutomaticBlock(
   }
 
   const switchedAt = nowUtc();
-  await saveActiveSession(startBlock(session, switchedAt, mode, kind, description, 'auto'));
+  const switchedSession = startBlock(session, switchedAt, mode, kind, description, 'auto');
+  await saveActiveSession(switchedSession);
+  await sessionManager.syncFromTimerSession(switchedSession);
   return true;
 }
 
@@ -867,7 +876,9 @@ export async function switchToDefaultHumanWork(description = DEFAULT_HUMAN_DESCR
   }
 
   const switchedAt = nowUtc();
-  await saveActiveSession(startBlock(session, switchedAt, 'human', 'implementation', description, 'auto'));
+  const switchedSession = startBlock(session, switchedAt, 'human', 'implementation', description, 'auto');
+  await saveActiveSession(switchedSession);
+  await sessionManager.syncFromTimerSession(switchedSession);
   return true;
 }
 
@@ -902,6 +913,7 @@ export async function pause(): Promise<void> {
   };
 
   await saveActiveSession(pausedSession);
+  await sessionManager.syncFromTimerSession(pausedSession);
   console.log(`Paused OpenSpec session for ${session.jira_issue_key} at ${pausedSession.paused_at_local}`);
   console.log(`Elapsed: ${formatDuration(getElapsedSeconds(pausedSession, pausedAt))}`);
 }
@@ -953,6 +965,7 @@ export async function resume(): Promise<void> {
   );
 
   await saveActiveSession(resumedSession);
+  await sessionManager.syncFromTimerSession(resumedSession);
   console.log(`Resumed OpenSpec session for ${session.jira_issue_key} at ${toLocalIso(resumedAt)}`);
   console.log(`Paused time added: ${formatDuration(pauseDuration)}`);
   console.log(`Elapsed: ${formatDuration(getElapsedSeconds(resumedSession, resumedAt))}`);
@@ -965,6 +978,7 @@ export async function cancel(): Promise<void> {
     return;
   }
 
+  await sessionManager.markCancelled(session);
   await clearActiveSession();
   console.log(`Cancelled OpenSpec session for ${session.jira_issue_key}. No Jira worklog was created.`);
 }

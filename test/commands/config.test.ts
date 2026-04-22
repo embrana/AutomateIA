@@ -207,6 +207,19 @@ describe('config key validation', () => {
     expect(validateConfigKeyPath('worklog.comment_template').valid).toBe(true);
     expect(validateConfigKeyPath('worklog.unknown').valid).toBe(false);
   });
+
+  it('allows agent backend config keys', async () => {
+    const { validateConfigKeyPath } = await import('../../src/core/config-schema.js');
+    expect(validateConfigKeyPath('agents.default_backend').valid).toBe(true);
+    expect(validateConfigKeyPath('agents.routing.implementation').valid).toBe(true);
+    expect(validateConfigKeyPath('agents.backends.shared.mode').valid).toBe(true);
+    expect(validateConfigKeyPath('agents.backends.shared.headers.Authorization').valid).toBe(true);
+    expect(validateConfigKeyPath('agents.backends.shared.access_token').valid).toBe(true);
+    expect(validateConfigKeyPath('agents.backends.shared.gemini_transport').valid).toBe(true);
+    expect(validateConfigKeyPath('agents.backends.shared.gemini_vertex_auth').valid).toBe(true);
+    expect(validateConfigKeyPath('agents.backends.shared.gcloud_bin').valid).toBe(true);
+    expect(validateConfigKeyPath('agents.backends.shared.unknown').valid).toBe(false);
+  });
 });
 
 describe('config profile command', () => {

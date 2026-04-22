@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ArchiveCommand } from '../../src/core/archive.js';
 import { Validator } from '../../src/core/validation/validator.js';
+import { RuntimeStore } from '../../src/storage/fs/RuntimeStore.js';
 import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
@@ -320,6 +321,105 @@ New feature description.
       const archiveDir = path.join(tempDir, 'openspec', 'changes', 'archive');
       const archives = await fs.readdir(archiveDir);
       expect(archives.length).toBe(1);
+    });
+
+    it('should block archive when runtime governance requires archive approval', async () => {
+      const changeName = 'approval-gated-feature';
+      const changeDir = path.join(tempDir, 'openspec', 'changes', changeName);
+      await fs.mkdir(path.join(changeDir, 'specs', changeName), { recursive: true });
+      await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] Task 1\n', 'utf-8');
+      await fs.writeFile(
+        path.join(changeDir, 'specs', changeName, 'spec.md'),
+        `## ADDED Requirements
+
+### Requirement: Approval gated archive
+The system SHALL require approval before archive.
+
+#### Scenario: Approval required
+- **WHEN** archive is attempted
+- **THEN** approval is required`,
+        'utf-8'
+      );
+
+      const runtimeStore = new RuntimeStore();
+      const timestamp = new Date('2026-04-21T18:00:00.000Z').toISOString();
+      await runtimeStore.saveTicketRuntime({
+        runtime_version: 1,
+        created_at: timestamp,
+        updated_at: timestamp,
+        ticket_key: 'PROJ-123',
+        state: 'HUMAN_ESCALATION_REQUIRED',
+        summary: 'Governed archive approval flow',
+        active_session_id: 'sess-1',
+        active_change_name: changeName,
+      });
+      await runtimeStore.saveSessionRuntime({
+        runtime_version: 1,
+        created_at: timestamp,
+        updated_at: timestamp,
+        session_id: 'sess-1',
+        ticket_key: 'PROJ-123',
+        developer_id: 'dev@example.com',
+        started_at: timestamp,
+        state: 'AWAITING_HUMAN',
+        command: 'purpose',
+        cwd: tempDir,
+        change_name: changeName,
+        autonomy_level: 'L2_ASSISTED',
+        active_mode: 'human',
+        active_kind: 'implementation',
+        current_cycle: 1,
+        last_timer_status: 'running',
+      });
+      await runtimeStore.saveChangeRuntime({
+        runtime_version: 1,
+        created_at: timestamp,
+        updated_at: timestamp,
+        change_name: changeName,
+        ticket_key: 'PROJ-123',
+        state: 'VALIDATED',
+        validation_status: 'PASSED',
+        archive_eligible: false,
+        worklog_eligible: true,
+      });
+      await runtimeStore.saveApprovalRequest({
+        runtime_version: 1,
+        created_at: timestamp,
+        updated_at: timestamp,
+        approval_id: 'approval-archive-1',
+        ticket_key: 'PROJ-123',
+        session_id: 'sess-1',
+        change_name: changeName,
+        scope: 'archive',
+        reason: 'Archive requires human approval under L2 assisted autonomy.',
+        evidence_refs: [],
+        status: 'PENDING',
+        resolved_at: null,
+      });
+      await fs.mkdir(
+        path.join(tempDir, '.openspec', 'runtime', 'tickets', 'PROJ-123', 'changes', changeName, 'delivery'),
+        { recursive: true }
+      );
+      await fs.writeFile(
+        path.join(tempDir, '.openspec', 'runtime', 'tickets', 'PROJ-123', 'changes', changeName, 'delivery', 'archive-decision.json'),
+        `${JSON.stringify({
+          archive_ready: true,
+          archive_allowed: false,
+          worklog_allowed: true,
+          approval_required: true,
+          approval_id: 'approval-archive-1',
+          blocking_reasons: ['Archive requires human approval under the current autonomy policy.'],
+        }, null, 2)}\n`,
+        'utf-8'
+      );
+
+      const result = await archiveCommand.execute(changeName, { yes: true, noValidate: true });
+
+      expect(result.archived).toBe(false);
+      expect(result.reason).toContain('approval-archive-1');
+      expect(console.log).toHaveBeenCalledWith(
+        expect.stringContaining('Archive requires approval before closeout: approval-archive-1')
+      );
     });
 
     it('should skip spec updates when --skip-specs flag is used', async () => {

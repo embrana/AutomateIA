@@ -202,11 +202,52 @@ function maybeWarnConfigDrift(
 }
 
 function redactSensitiveConfig(config: GlobalConfig): GlobalConfig {
-  const redacted = JSON.parse(JSON.stringify(config)) as GlobalConfig;
+  const redact = (value: unknown, pathParts: string[] = []): unknown => {
+    if (Array.isArray(value)) {
+      return value.map((item) => redact(item, pathParts));
+    }
+    if (!value || typeof value !== 'object') {
+      return value;
+    }
+
+    const output: Record<string, unknown> = {};
+    for (const [key, nested] of Object.entries(value)) {
+      const nextPath = [...pathParts, key];
+      const isJiraToken = nextPath.join('.') === 'jira.api_token';
+      const isAgentApiKey =
+        nextPath.length === 4
+        && nextPath[0] === 'agents'
+        && nextPath[1] === 'backends'
+        && nextPath[3] === 'api_key';
+      const isAgentAccessToken =
+        nextPath.length === 4
+        && nextPath[0] === 'agents'
+        && nextPath[1] === 'backends'
+        && nextPath[3] === 'access_token';
+      const isAgentEnvValue =
+        nextPath.length >= 5
+        && nextPath[0] === 'agents'
+        && nextPath[1] === 'backends'
+        && nextPath[3] === 'env';
+      output[key] = isJiraToken || isAgentApiKey || isAgentAccessToken || isAgentEnvValue
+        ? '********'
+        : redact(nested, nextPath);
+    }
+    return output;
+  };
+
+  const redacted = redact(JSON.parse(JSON.stringify(config))) as GlobalConfig;
   if (redacted.jira?.api_token) {
     redacted.jira.api_token = '********';
   }
   return redacted;
+}
+
+function isSensitiveConfigKey(key: string): boolean {
+  return key === 'jira.api_token'
+    || /^agents\.backends\.[^.]+\.api_key$/.test(key)
+    || /^agents\.backends\.[^.]+\.access_token$/.test(key)
+    || /^agents\.backends\.[^.]+\.env\./.test(key);
 }
 
 /**
@@ -237,9 +278,10 @@ export function registerConfigCommand(program: Command): void {
 
   const showConfig = (options: { json?: boolean }) => {
     const config = getGlobalConfig();
+    const redactedConfig = redactSensitiveConfig(config);
 
     if (options.json) {
-      console.log(JSON.stringify(config, null, 2));
+      console.log(JSON.stringify(redactedConfig, null, 2));
     } else {
       // Read raw config to determine which values are explicit vs defaults
       const configPath = getGlobalConfigPath();
@@ -252,7 +294,7 @@ export function registerConfigCommand(program: Command): void {
         // If reading fails, treat all as defaults
       }
 
-      console.log(formatValueYaml(redactSensitiveConfig(config)));
+      console.log(formatValueYaml(redactedConfig));
 
       // Annotate profile settings
       const profileSource = rawConfig.profile !== undefined ? '(explicit)' : '(default)';
@@ -341,7 +383,7 @@ export function registerConfigCommand(program: Command): void {
       setNestedValue(config, key, coercedValue);
       saveGlobalConfig(config as GlobalConfig);
 
-      const displayValue = key === 'jira.api_token'
+      const displayValue = isSensitiveConfigKey(key)
         ? '"********"'
         : typeof coercedValue === 'string' ? `"${coercedValue}"` : String(coercedValue);
       console.log(`Set ${key} = ${displayValue}`);

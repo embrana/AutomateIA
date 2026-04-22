@@ -35,3 +35,11 @@ Post-installation script that runs after package installation.
 ## pack-version-check.mjs
 
 Validates package version consistency before publishing.
+
+## codex-implementation-runner.mjs
+
+Runs Codex CLI as a local `ImplementationAgent` backend and converts the final answer into structured `workspace_actions`.
+
+## configure-codex-backend.mjs
+
+Writes the global OpenSpec config entry that routes `ImplementationAgent` to the local Codex CLI runner.

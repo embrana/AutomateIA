@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import type { AgentBackendRoutingConfig } from './runtime/agent-backends/config.js';
 
 // Constants
 export const GLOBAL_CONFIG_DIR_NAME = 'openspec';
@@ -30,12 +31,14 @@ export interface GlobalConfig {
     comment_template?: string;
     track_metadata_locally?: boolean;
   };
+  agents?: AgentBackendRoutingConfig;
 }
 
 const DEFAULT_CONFIG: GlobalConfig = {
   featureFlags: {},
   profile: 'core',
   delivery: 'both',
+  agents: {},
   worklog: {
     rounding: 'minute',
     min_seconds: 60,
@@ -145,6 +148,18 @@ export function getGlobalConfig(): GlobalConfig {
         ...(DEFAULT_CONFIG.worklog || {}),
         ...(parsed.worklog || {})
       },
+      agents: {
+        ...(DEFAULT_CONFIG.agents || {}),
+        ...(parsed.agents || {}),
+        routing: {
+          ...((DEFAULT_CONFIG.agents || {}).routing || {}),
+          ...((parsed.agents || {}).routing || {}),
+        },
+        backends: {
+          ...((DEFAULT_CONFIG.agents || {}).backends || {}),
+          ...((parsed.agents || {}).backends || {}),
+        },
+      },
     };
 
     // Schema evolution: apply defaults for new fields if not present in loaded config
@@ -156,6 +171,9 @@ export function getGlobalConfig(): GlobalConfig {
     }
     if (parsed.worklog === undefined) {
       merged.worklog = DEFAULT_CONFIG.worklog;
+    }
+    if (parsed.agents === undefined) {
+      merged.agents = DEFAULT_CONFIG.agents;
     }
 
     return merged;
