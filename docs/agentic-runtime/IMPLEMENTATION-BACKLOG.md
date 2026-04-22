@@ -14,6 +14,15 @@ This backlog turns the architecture into a phased implementation plan for Codex.
 4. Ship CLI observability before full automation.
 5. Keep each phase independently testable and reversible.
 
+## UX Follow-Ups
+
+- `osj orchestrate --until <stage>` should print an explicit no-op summary when the runtime is already beyond the requested stage.
+- The no-op output should include:
+  - current ticket/session/change state
+  - why no agent was executed
+  - the next actionable command, for example `osj orchestrate --until implementation` or `osj approval show`
+- `osj runtime status` and future `osj runtime explain` should stay aligned with that guidance so developers are never left with an empty terminal and no explanation.
+
 ## Status Snapshot
 
 Current repository status after the first seven runtime PRs:

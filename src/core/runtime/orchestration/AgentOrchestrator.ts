@@ -238,8 +238,13 @@ export class AgentOrchestrator {
       throw new Error(`Unsupported orchestration stage: ${stage}`);
     }
 
+    const startIndex = await this.determineStartIndex();
+    if (startIndex > stopIndex) {
+      return [];
+    }
+
     const executed: AgentExecutionSummary[] = [];
-    for (const agentName of ORCHESTRATION_PLAN.slice(0, stopIndex + 1)) {
+    for (const agentName of ORCHESTRATION_PLAN.slice(startIndex, stopIndex + 1)) {
       const summary = await this.runAgent(agentName);
       executed.push(summary);
 
@@ -253,6 +258,60 @@ export class AgentOrchestrator {
     }
 
     return executed;
+  }
+
+  private async determineStartIndex(): Promise<number> {
+    const resolved = await this.contextResolver.resolveActive();
+    const nextAgent = await this.inferNextAgent(resolved.runtimeSnapshot);
+    const startIndex = ORCHESTRATION_PLAN.findIndex((agent) => agent === nextAgent);
+    return startIndex >= 0 ? startIndex : 0;
+  }
+
+  private async inferNextAgent(snapshot: RuntimeSnapshot): Promise<AgentName> {
+    const ticketKey = snapshot.ticket.ticket_key;
+    const changeName = snapshot.session.change_name;
+
+    if (!changeName) {
+      const hasTicketContext = await this.artifactManager.fileExists(this.artifactManager.getTicketContextRef(ticketKey));
+      if (!hasTicketContext || snapshot.ticket.state === 'DISCOVERED') {
+        return 'context_agent';
+      }
+      return 'spec_agent';
+    }
+
+    const hasPlanning = await this.artifactManager.fileExists(this.artifactManager.getPlanningRef(ticketKey, changeName));
+    const hasImplementation = await this.artifactManager.fileExists(this.artifactManager.getImplementationRef(ticketKey, changeName));
+    const hasCritic = await this.artifactManager.fileExists(this.artifactManager.getCriticRef(ticketKey, changeName));
+
+    if (snapshot.ticket.state === 'VALIDATION_FAILED' || snapshot.change?.state === 'ARCHIVE_BLOCKED') {
+      return 'implementation_agent';
+    }
+
+    if (snapshot.change?.state === 'VALIDATED' || snapshot.ticket.state === 'READY_FOR_ARCHIVE') {
+      return 'delivery_agent';
+    }
+
+    if (snapshot.change?.state === 'UNDER_REVIEW' || snapshot.ticket.state === 'UNDER_REVIEW') {
+      return hasCritic ? 'validation_agent' : 'critic_agent';
+    }
+
+    if (snapshot.change?.state === 'IN_IMPLEMENTATION' || snapshot.ticket.state === 'IN_EXECUTION') {
+      return hasImplementation ? 'critic_agent' : 'implementation_agent';
+    }
+
+    if (snapshot.ticket.state === 'PLANNED') {
+      return 'implementation_agent';
+    }
+
+    if (snapshot.change?.state === 'TASKED' || snapshot.ticket.state === 'SPEC_READY') {
+      return hasPlanning ? 'implementation_agent' : 'planning_agent';
+    }
+
+    if (snapshot.ticket.state === 'CONTEXT_IMPORTED') {
+      return 'spec_agent';
+    }
+
+    return 'context_agent';
   }
 
   private shouldContinueAfter(agentName: AgentName, nextAction: NextAction): boolean {

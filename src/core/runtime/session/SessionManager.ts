@@ -39,7 +39,10 @@ export class SessionManager {
   async syncFromTimerSession(session: TimerSession, options: SessionSyncOptions = {}): Promise<RuntimeSnapshot> {
     const ticketKey = session.jira_issue_key;
     const previousTicket = await this.runtimeStore.getTicketRuntime(ticketKey);
-    const previousSession = await this.runtimeStore.getSessionRuntime(ticketKey);
+    const persistedSession = await this.runtimeStore.getSessionRuntime(ticketKey);
+    const previousSession = persistedSession?.session_id === session.session_id
+      ? persistedSession
+      : null;
     const previousChange = session.openspec_change?.name
       ? await this.runtimeStore.getChangeRuntime(ticketKey, session.openspec_change.name)
       : null;
@@ -48,16 +51,16 @@ export class SessionManager {
     this.stateEngine.assertSessionTransition(previousSession?.state, nextSession.state);
     await this.runtimeStore.saveSessionRuntime(nextSession);
 
-    const nextTicket = this.buildTicketRuntime(session, previousTicket, nextSession, options);
-    this.stateEngine.assertTicketTransition(previousTicket?.state, nextTicket.state);
-    await this.runtimeStore.saveTicketRuntime(nextTicket);
-
     let nextChange: ChangeRuntime | undefined;
     if (session.openspec_change?.name) {
       nextChange = this.buildChangeRuntime(session, previousChange ?? undefined, options);
       this.stateEngine.assertChangeTransition(previousChange?.state, nextChange.state);
       await this.runtimeStore.saveChangeRuntime(nextChange);
     }
+
+    const nextTicket = this.buildTicketRuntime(session, previousTicket, nextSession, nextChange, options);
+    this.stateEngine.assertTicketTransition(previousTicket?.state, nextTicket.state);
+    await this.runtimeStore.saveTicketRuntime(nextTicket);
 
     return {
       source: 'active_timer',
@@ -126,6 +129,37 @@ export class SessionManager {
     return change;
   }
 
+  async recordArchiveOutcomeForChange(input: {
+    changeName: string;
+    archived: boolean;
+    archiveName?: string;
+    reason?: string;
+  }): Promise<ChangeRuntime | null> {
+    const ticketKey = await this.findTicketKeyForChange(input.changeName);
+    if (!ticketKey) {
+      return null;
+    }
+
+    return this.recordArchiveOutcome({
+      ticketKey,
+      changeName: input.changeName,
+      archived: input.archived,
+      archiveName: input.archiveName,
+      reason: input.reason,
+    });
+  }
+
+  async findTicketKeyForChange(changeName: string): Promise<string | null> {
+    const ticketKeys = await this.runtimeStore.listTicketKeys();
+    for (const ticketKey of ticketKeys) {
+      const change = await this.runtimeStore.getChangeRuntime(ticketKey, changeName);
+      if (change) {
+        return ticketKey;
+      }
+    }
+    return null;
+  }
+
   async getCurrentRuntimeSnapshot(): Promise<RuntimeSnapshot | null> {
     const activeTimer = await getActiveSession();
     if (activeTimer) {
@@ -176,10 +210,11 @@ export class SessionManager {
     session: TimerSession,
     previous: TicketRuntime | null,
     nextSession: SessionRuntime,
+    nextChange: ChangeRuntime | undefined,
     options: SessionSyncOptions
   ): TicketRuntime {
     const updatedAt = new Date().toISOString();
-    const state = options.overrideTicketState ?? this.deriveTicketState(session, previous?.state);
+    const state = options.overrideTicketState ?? this.deriveTicketState(session, previous?.state, nextChange);
 
     return {
       runtime_version: RUNTIME_LAYOUT_VERSION,
@@ -240,7 +275,33 @@ export class SessionManager {
     }
   }
 
-  private deriveTicketState(session: TimerSession, previous?: TicketRuntimeState): TicketRuntimeState {
+  private deriveTicketState(
+    session: TimerSession,
+    previous: TicketRuntimeState | undefined,
+    change: ChangeRuntime | undefined
+  ): TicketRuntimeState {
+    if (change) {
+      switch (change.state) {
+        case 'ARCHIVED':
+          return 'ARCHIVED';
+        case 'VALIDATED':
+          return 'READY_FOR_ARCHIVE';
+        case 'UNDER_REVIEW':
+          return 'UNDER_REVIEW';
+        case 'IN_IMPLEMENTATION':
+          return 'IN_EXECUTION';
+        case 'ARCHIVE_BLOCKED':
+          return change.validation_status === 'BLOCKED' ? 'BLOCKED' : 'VALIDATION_FAILED';
+        case 'TASKED':
+          if (previous === 'PLANNED') {
+            return 'PLANNED';
+          }
+          break;
+        default:
+          break;
+      }
+    }
+
     if (previous === 'ARCHIVED' || previous === 'BLOCKED') {
       return previous;
     }

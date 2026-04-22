@@ -199,6 +199,10 @@ export class ApprovalManager {
       return;
     }
 
+    if (this.shouldIgnoreStateMutationForStaleApproval(approval, ticket, change)) {
+      return;
+    }
+
     const updatedAt = nowIso();
     const nextSession = this.resolveSessionAfterApproval(session, approval, updatedAt);
     const nextTicket = this.resolveTicketAfterApproval(ticket, approval, updatedAt);
@@ -216,6 +220,26 @@ export class ApprovalManager {
       await this.runtimeStore.saveChangeRuntime(nextChange);
       await this.updateArchiveDecisionArtifact(nextChange, approval);
     }
+  }
+
+  private shouldIgnoreStateMutationForStaleApproval(
+    approval: ApprovalRequest,
+    ticket: TicketRuntime,
+    change: ChangeRuntime | null
+  ): boolean {
+    if (approval.scope === 'archive') {
+      return false;
+    }
+
+    if (ticket.state === 'READY_FOR_ARCHIVE' || ticket.state === 'ARCHIVED') {
+      return true;
+    }
+
+    if (!change) {
+      return false;
+    }
+
+    return change.state === 'VALIDATED' || change.state === 'ARCHIVED';
   }
 
   private resolveSessionAfterApproval(
