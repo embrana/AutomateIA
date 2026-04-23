@@ -9,4 +9,20 @@ describe('StateEngine', () => {
       stateEngine.assertTicketTransition('SPEC_READY', 'HUMAN_ESCALATION_REQUIRED');
     }).not.toThrow();
   });
+
+  it('allows returning from human escalation required to under review', () => {
+    const stateEngine = new StateEngine();
+
+    expect(() => {
+      stateEngine.assertTicketTransition('HUMAN_ESCALATION_REQUIRED', 'UNDER_REVIEW');
+    }).not.toThrow();
+  });
+
+  it('allows returning from under review to in execution after implementation approval', () => {
+    const stateEngine = new StateEngine();
+
+    expect(() => {
+      stateEngine.assertTicketTransition('UNDER_REVIEW', 'IN_EXECUTION');
+    }).not.toThrow();
+  });
 });

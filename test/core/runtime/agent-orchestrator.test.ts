@@ -380,6 +380,7 @@ The runtime persists a prompt artifact for the implementation step.
     expect(backendPrompt).toContain('## Task Prompt');
     expect(backendPrompt).not.toContain('# Likely Affected File Contents');
     expect(backendPrompt).toContain('# Artifact Refs');
+    expect(backendPrompt).toContain('keep it synchronized with the work completed in this run');
     expect(implementationReport.backend_invocation.request_payload.metadata).toMatchObject({
       execution_plan_step_ids: ['P1', 'P2', 'P3'],
     });

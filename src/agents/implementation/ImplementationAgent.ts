@@ -154,6 +154,7 @@ async function buildImplementationPrompts(
     'Use run_command only for focused verification commands such as node --test, pnpm test, vitest, or tsc --noEmit.',
     'If you cannot edit files directly, return the intended edits as workspace_actions so the runtime can apply them locally.',
     'Do not rely on large inline file dumps; inspect the repository and referenced artifacts directly when you need more detail.',
+    'Keep the active OpenSpec tasks.md aligned with the work you actually complete, and update it when implementation progress changes.',
   ].join(' ');
 
   const taskPrompt = [
@@ -199,6 +200,7 @@ async function buildImplementationPrompts(
     '# Instructions',
     '- Prefer minimal, production-ready edits.',
     '- Update or add tests when the plan requires them.',
+    '- Treat openspec/changes/<change>/tasks.md as part of the implementation surface and keep it synchronized with the work completed in this run.',
     '- Respect high-risk path guards and do not exceed the allowed file/diff budget.',
     '- Inspect files from the workspace or artifact refs instead of assuming the summaries are exhaustive.',
     '- Return JSON only.',

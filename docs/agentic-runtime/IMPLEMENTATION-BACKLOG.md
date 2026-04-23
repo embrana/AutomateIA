@@ -22,6 +22,18 @@ This backlog turns the architecture into a phased implementation plan for Codex.
   - why no agent was executed
   - the next actionable command, for example `osj orchestrate --until implementation` or `osj approval show`
 - `osj runtime status` and future `osj runtime explain` should stay aligned with that guidance so developers are never left with an empty terminal and no explanation.
+- `osj runtime explain` should distinguish policy-budget escalations from generic cycle failures.
+- When an implementation or critic cycle is cut off by diff/file-count policy, the explanation should include:
+  - the measured value, for example `estimated diff size 1032`
+  - the configured limit, for example `limit 800`
+  - the agent that raised the escalation
+  - the evidence artifact that contains the detailed assessment, for example `implementation/change-report.json` or `review/critic-report.json`
+  - the recommended next action, for example `osj approval show`, `osj approval accept <id>`, or a narrower rerun after reducing scope
+- The same policy-budget explanation should appear consistently in:
+  - `osj runtime explain`
+  - approval reasons
+  - critic and validation summaries
+  - future terminal summaries emitted by `osj orchestrate`
 
 ## Status Snapshot
 
