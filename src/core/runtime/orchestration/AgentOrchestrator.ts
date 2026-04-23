@@ -597,6 +597,16 @@ export class AgentOrchestrator {
           `- Backend: ${output.backend_invocation.backend_name ?? 'none'}`,
           `- Mode: ${output.backend_invocation.mode}`,
           `- Status: ${output.backend_invocation.status}`,
+          `- Input tokens: ${
+            typeof output.backend_invocation.usage?.input_tokens === 'number'
+              ? output.backend_invocation.usage.input_tokens
+              : 'N/A'
+          }`,
+          `- Output tokens: ${
+            typeof output.backend_invocation.usage?.output_tokens === 'number'
+              ? output.backend_invocation.usage.output_tokens
+              : 'N/A'
+          }`,
           ...formatBullets(output.backend_invocation.notes, 'No backend notes'),
           '',
           '## Workspace Execution',

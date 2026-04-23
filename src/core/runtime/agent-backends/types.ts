@@ -5,6 +5,9 @@ export interface AgentInvocationRequest {
   agent_name: AgentName;
   backend_name: string;
   mode: AgentBackendMode;
+  run_id?: string;
+  ticket_key?: string;
+  session_id?: string;
   workspace_root: string;
   change_name?: string;
   input_refs: string[];
@@ -24,6 +27,10 @@ export interface AgentInvocationResult {
   request_payload?: Record<string, unknown>;
   response_payload?: unknown;
   structured_output?: Record<string, unknown> | null;
+  usage?: {
+    input_tokens?: number | null;
+    output_tokens?: number | null;
+  };
   notes: string[];
 }
 

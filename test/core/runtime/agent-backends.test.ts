@@ -58,6 +58,10 @@ describe('agent backends', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(
         JSON.stringify({
+          usage: {
+            prompt_tokens: 123,
+            completion_tokens: 45,
+          },
           choices: [
             {
               message: {
@@ -114,6 +118,10 @@ describe('agent backends', () => {
       status: 'applied',
       limitations: [],
     });
+    expect(result.usage).toEqual({
+      input_tokens: 123,
+      output_tokens: 45,
+    });
   });
 
   it('executes command backends inside the workspace', async () => {
@@ -131,7 +139,8 @@ describe('agent backends', () => {
             '  const parsed = JSON.parse(input);',
             '  process.stdout.write(JSON.stringify({',
             '    status: "applied",',
-            '    files_touched: parsed.metadata.likely_affected_files || []',
+            '    files_touched: parsed.metadata.likely_affected_files || [],',
+            '    progress_path_present: Boolean(process.env.OSJ_PROGRESS_PATH)',
             '  }));',
             '});',
           ].join(' '),
@@ -141,6 +150,9 @@ describe('agent backends', () => {
         agent_name: 'implementation_agent',
         backend_name: 'local-runner',
         mode: 'command',
+        run_id: 'run-123',
+        ticket_key: 'REB-233',
+        session_id: 'session-123',
         workspace_root: tempDir,
         input_refs: [],
         constraints: {
@@ -161,6 +173,7 @@ describe('agent backends', () => {
     expect(result.structured_output).toEqual({
       status: 'applied',
       files_touched: ['src/core/archive.ts'],
+      progress_path_present: true,
     });
   });
 

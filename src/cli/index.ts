@@ -39,6 +39,7 @@ import { buildBlockedArchiveComment } from '../core/timer/archive-comment.js';
 import { getActiveSession as getActiveTimerSession } from '../core/timer/store.js';
 import { RuntimeStatusCommand } from '../core/runtime/status.js';
 import { RuntimeExplainCommand } from '../core/runtime/explain.js';
+import { OrchestrateHeartbeatMonitor } from '../core/runtime/orchestrate-live-feedback.js';
 import { printOrchestrateTerminalSummary } from '../core/runtime/orchestrate-summary.js';
 import { SessionManager } from '../core/runtime/session/SessionManager.js';
 import { AgentOrchestrator } from '../core/runtime/orchestration/AgentOrchestrator.js';
@@ -537,7 +538,14 @@ orchestrateCmd
       ) {
         throw new Error(`Unsupported --until value '${options.until}'. Use context, spec, planning, implementation, critic, validation, or delivery.`);
       }
-      const results = await agentOrchestrator.orchestrateUntil(until);
+      const heartbeatMonitor = new OrchestrateHeartbeatMonitor(process.cwd());
+      heartbeatMonitor.start();
+      let results: Awaited<ReturnType<typeof agentOrchestrator.orchestrateUntil>>;
+      try {
+        results = await agentOrchestrator.orchestrateUntil(until);
+      } finally {
+        await heartbeatMonitor.stop();
+      }
       for (const summary of results) {
         printAgentExecutionSummary(summary);
       }

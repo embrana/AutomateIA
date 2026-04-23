@@ -65,6 +65,12 @@ export class OpenAICompatibleAgentBackend implements AgentBackend {
       request_payload: requestPayload,
       response_payload: responsePayload,
       structured_output: parseStructuredContent(content),
+      usage: {
+        input_tokens:
+          (responsePayload as { usage?: { prompt_tokens?: unknown } })?.usage?.prompt_tokens as number | null | undefined,
+        output_tokens:
+          (responsePayload as { usage?: { completion_tokens?: unknown } })?.usage?.completion_tokens as number | null | undefined,
+      },
       notes: apiKey
         ? ['OpenAI-compatible backend executed with authenticated HTTP request.']
         : ['OpenAI-compatible backend executed without Authorization header.'],

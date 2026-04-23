@@ -224,6 +224,12 @@ export class GeminiNativeAgentBackend implements AgentBackend {
       request_payload: requestPayload,
       response_payload: responsePayload,
       structured_output: parseStructuredContent(extractGeminiText(responsePayload)),
+      usage: {
+        input_tokens:
+          (responsePayload as { usageMetadata?: { promptTokenCount?: unknown } })?.usageMetadata?.promptTokenCount as number | null | undefined,
+        output_tokens:
+          (responsePayload as { usageMetadata?: { candidatesTokenCount?: unknown } })?.usageMetadata?.candidatesTokenCount as number | null | undefined,
+      },
       notes: [
         transport === 'vertex'
           ? `Gemini Vertex backend executed with Bearer authentication (${authSource ?? 'unknown'} source).`

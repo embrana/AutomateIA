@@ -62,6 +62,25 @@ async function readStdinUtf8() {
   });
 }
 
+async function writeProgress(progressPath, payload) {
+  if (!progressPath) {
+    return;
+  }
+  await fs.mkdir(path.dirname(progressPath), { recursive: true });
+  await fs.writeFile(
+    progressPath,
+    `${JSON.stringify(
+      {
+        ...payload,
+        updated_at: new Date().toISOString(),
+      },
+      null,
+      2
+    )}\n`,
+    'utf-8'
+  );
+}
+
 function buildPrompt(request) {
   const metadata = request.metadata && Object.keys(request.metadata).length > 0
     ? JSON.stringify(request.metadata, null, 2)
@@ -199,6 +218,7 @@ async function runCodex({ workspaceRoot, prompt, outputPath, request }) {
 async function main() {
   const rawRequest = await readStdinUtf8();
   const request = parseJsonOrThrow(rawRequest, 'backend request payload');
+  const progressPath = process.env.OSJ_PROGRESS_PATH;
   const workspaceRoot = typeof request.workspace_root === 'string' && request.workspace_root
     ? request.workspace_root
     : process.cwd();
@@ -207,12 +227,32 @@ async function main() {
   const outputPath = path.join(tempDir, 'last-message.json');
 
   try {
+    await writeProgress(progressPath, {
+      backend_name: request.backend_name ?? 'codex-cli',
+      agent_name: request.agent_name ?? 'implementation_agent',
+      run_id: request.run_id ?? null,
+      phase: 'thinking',
+      phase_source: 'backend',
+      input_tokens: null,
+      output_tokens: null,
+    });
+
     const prompt = buildPrompt(request);
     const result = await runCodex({
       workspaceRoot,
       prompt,
       outputPath,
       request,
+    });
+
+    await writeProgress(progressPath, {
+      backend_name: request.backend_name ?? 'codex-cli',
+      agent_name: request.agent_name ?? 'implementation_agent',
+      run_id: request.run_id ?? null,
+      phase: 'finalizing',
+      phase_source: 'backend',
+      input_tokens: null,
+      output_tokens: null,
     });
 
     const payload = {

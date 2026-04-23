@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import type { AgentBackend } from '../AgentBackend.js';
 import type { AgentBackendConfig } from '../config.js';
 import type { AgentInvocationRequest, AgentInvocationResult } from '../types.js';
+import { RuntimeStore } from '../../../../storage/fs/RuntimeStore.js';
 
 function parseMaybeJson(value: string): unknown {
   try {
@@ -13,6 +14,7 @@ function parseMaybeJson(value: string): unknown {
 
 export class CommandAgentBackend implements AgentBackend {
   readonly mode = 'command' as const;
+  private readonly runtimeStore = new RuntimeStore();
 
   async invoke(config: AgentBackendConfig, request: AgentInvocationRequest): Promise<AgentInvocationResult> {
     if (!config.command) {
@@ -22,6 +24,9 @@ export class CommandAgentBackend implements AgentBackend {
     const requestPayload = {
       backend_name: request.backend_name,
       agent_name: request.agent_name,
+      run_id: request.run_id ?? null,
+      ticket_key: request.ticket_key ?? null,
+      session_id: request.session_id ?? null,
       workspace_root: request.workspace_root,
       change_name: request.change_name,
       backend_config: {
@@ -36,11 +41,21 @@ export class CommandAgentBackend implements AgentBackend {
     };
 
     const responsePayload = await new Promise<unknown>((resolve, reject) => {
+      const progressPath =
+        request.run_id && request.ticket_key
+          ? this.runtimeStore.getLiveProgressPath(
+              request.ticket_key,
+              request.change_name,
+              request.run_id,
+              request.workspace_root
+            )
+          : undefined;
       const child = spawn(config.command!, config.args ?? [], {
         cwd: request.workspace_root,
         env: {
           ...process.env,
           ...(config.env ?? {}),
+          ...(progressPath ? { OSJ_PROGRESS_PATH: progressPath } : {}),
         },
         stdio: ['pipe', 'pipe', 'pipe'],
       });

@@ -79,6 +79,12 @@ export class AnthropicNativeAgentBackend implements AgentBackend {
       request_payload: requestPayload,
       response_payload: responsePayload,
       structured_output: parseStructuredContent(textContent),
+      usage: {
+        input_tokens:
+          (responsePayload as { usage?: { input_tokens?: unknown } })?.usage?.input_tokens as number | null | undefined,
+        output_tokens:
+          (responsePayload as { usage?: { output_tokens?: unknown } })?.usage?.output_tokens as number | null | undefined,
+      },
       notes: [
         'Anthropic Messages API backend executed with x-api-key authentication.',
       ],

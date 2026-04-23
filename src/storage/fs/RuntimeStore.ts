@@ -75,6 +75,17 @@ export class RuntimeStore {
     return path.join(this.getTicketDir(ticketKey, projectDir), 'agent-runs');
   }
 
+  getLiveProgressDir(ticketKey: string, changeName?: string, projectDir = process.cwd()): string {
+    if (changeName) {
+      return path.join(this.getChangeDir(ticketKey, changeName, projectDir), 'live-progress');
+    }
+    return path.join(this.getTicketDir(ticketKey, projectDir), 'live-progress');
+  }
+
+  getLiveProgressPath(ticketKey: string, changeName: string | undefined, runId: string, projectDir = process.cwd()): string {
+    return path.join(this.getLiveProgressDir(ticketKey, changeName, projectDir), `${runId}.json`);
+  }
+
   getApprovalsDir(ticketKey: string, projectDir = process.cwd()): string {
     return path.join(this.getTicketDir(ticketKey, projectDir), 'approvals');
   }

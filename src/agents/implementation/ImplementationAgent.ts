@@ -1,12 +1,10 @@
-import { execFile } from 'child_process';
-import { promises as fs } from 'fs';
 import path from 'path';
-import { promisify } from 'util';
 import { getTaskProgressForChange } from '../../utils/task-progress.js';
 import { AutonomyPolicy } from '../../core/runtime/orchestration/AutonomyPolicy.js';
 import { AgentBackendRegistry } from '../../core/runtime/agent-backends/BackendRegistry.js';
 import type { AgentInvocationResult } from '../../core/runtime/agent-backends/types.js';
 import type { AgentBackendMode } from '../../core/runtime/agent-backends/config.js';
+import { inspectWorkspaceDiffWithExclusions } from '../../core/runtime/workspace-diff.js';
 import {
   parseWorkspaceActions,
   WorkspaceActionExecutor,
@@ -19,8 +17,6 @@ import type {
   NormalizedContext,
 } from '../base/Agent.js';
 import type { ExecutionPlan } from '../planning/PlanningAgent.js';
-
-const execFileAsync = promisify(execFile);
 
 export interface ImplementationChange {
   file: string;
@@ -62,6 +58,10 @@ export interface ImplementationBackendInvocation {
   request_payload?: Record<string, unknown>;
   response_payload?: unknown;
   structured_output?: Record<string, unknown> | null;
+  usage?: {
+    input_tokens?: number | null;
+    output_tokens?: number | null;
+  };
   notes: string[];
   error?: string;
   proposed_workspace_actions?: ReturnType<typeof parseWorkspaceActions>;
@@ -216,98 +216,6 @@ async function buildImplementationPrompts(
       input_refs: context.envelope.input_refs,
     },
   };
-}
-
-async function estimateUntrackedLines(projectRoot: string, files: string[]): Promise<number> {
-  let total = 0;
-  for (const file of files) {
-    try {
-      const raw = await fs.readFile(path.join(projectRoot, file), 'utf-8');
-      total += raw.split('\n').length;
-    } catch {
-      total += 0;
-    }
-  }
-  return total;
-}
-
-function isExcludedPath(file: string, excludedPrefixes: string[]): boolean {
-  return excludedPrefixes.some((prefix) => file.startsWith(prefix));
-}
-
-async function inspectWorkspaceDiff(projectRoot: string): Promise<{
-  changes: Array<{ file: string; changeType: ImplementationChange['change_type'] }>;
-  diffLines: number;
-  source: 'git' | 'fallback';
-}> {
-  return inspectWorkspaceDiffWithExclusions(projectRoot, ['.openspec/']);
-}
-
-async function inspectWorkspaceDiffWithExclusions(
-  projectRoot: string,
-  excludedPrefixes: string[]
-): Promise<{
-  changes: Array<{ file: string; changeType: ImplementationChange['change_type'] }>;
-  diffLines: number;
-  source: 'git' | 'fallback';
-}> {
-  try {
-    const { stdout: gitRootRaw } = await execFileAsync('git', ['rev-parse', '--show-toplevel'], {
-      cwd: projectRoot,
-      encoding: 'utf8',
-    });
-    const gitRoot = gitRootRaw.trim();
-    const { stdout: statusRaw } = await execFileAsync('git', ['status', '--porcelain', '--untracked-files=all'], {
-      cwd: gitRoot,
-      encoding: 'utf8',
-    });
-    const rawEntries = statusRaw
-      .split('\n')
-      .map((line) => line.trimEnd())
-      .filter(Boolean)
-      .map((line) => {
-        const status = line.slice(0, 2).trim();
-        const rawPath = line.slice(3).split(' -> ').at(-1)?.trim() ?? '';
-        const file = rawPath.split(path.sep).join('/');
-        const changeType: ImplementationChange['change_type'] =
-          status === '??' || status.startsWith('A')
-            ? 'created'
-            : status.startsWith('D')
-              ? 'deleted'
-              : 'modified';
-        return { file, changeType, status };
-      });
-    const entries = rawEntries.filter((entry) => entry.file && !isExcludedPath(entry.file, excludedPrefixes));
-
-    const { stdout: numstatRaw } = await execFileAsync('git', ['diff', '--numstat', '--'], {
-      cwd: gitRoot,
-      encoding: 'utf8',
-    });
-    const trackedDiffLines = numstatRaw
-      .split('\n')
-      .filter(Boolean)
-      .reduce((sum, line) => {
-        const [added, removed, file] = line.split('\t');
-        if (!file || isExcludedPath(file, excludedPrefixes)) {
-          return sum;
-        }
-        return sum + (Number.parseInt(added, 10) || 0) + (Number.parseInt(removed, 10) || 0);
-      }, 0);
-    const untrackedFiles = entries.filter((entry) => entry.status === '??').map((entry) => entry.file);
-    const untrackedLines = await estimateUntrackedLines(gitRoot, untrackedFiles);
-
-    return {
-      changes: entries.map(({ file, changeType }) => ({ file, changeType })),
-      diffLines: trackedDiffLines + untrackedLines,
-      source: 'git',
-    };
-  } catch {
-    return {
-      changes: [],
-      diffLines: 0,
-      source: 'fallback',
-    };
-  }
 }
 
 export class ImplementationAgent implements Agent<ImplementationAgentInput, ImplementationAgentOutput> {
@@ -493,14 +401,17 @@ export class ImplementationAgent implements Agent<ImplementationAgentInput, Impl
       const result = await this.backendRegistry.invoke(resolvedBackend, {
         agent_name: this.name,
         workspace_root: context.projectRoot,
+        run_id: context.envelope.run_id,
+        ticket_key: context.envelope.ticket_key,
+        session_id: context.envelope.session_id,
         change_name: context.runtimeSnapshot.session.change_name,
         input_refs: context.envelope.input_refs,
         constraints: context.envelope.constraints,
         budget: context.envelope.budget,
-      system_prompt: prompt.systemPrompt,
-      task_prompt: prompt.taskPrompt,
-      metadata: prompt.metadata,
-    });
+        system_prompt: prompt.systemPrompt,
+        task_prompt: prompt.taskPrompt,
+        metadata: prompt.metadata,
+      });
       return this.toBackendInvocation(result);
     } catch (error) {
       return {
@@ -527,6 +438,7 @@ export class ImplementationAgent implements Agent<ImplementationAgentInput, Impl
       request_payload: result.request_payload,
       response_payload: result.response_payload,
       structured_output: result.structured_output,
+      usage: result.usage,
       notes: result.notes,
       proposed_workspace_actions: parseWorkspaceActions(result.structured_output?.workspace_actions),
     };
