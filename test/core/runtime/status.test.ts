@@ -4,7 +4,10 @@ import path from 'path';
 import os from 'os';
 import { saveGlobalConfig } from '../../../src/core/global-config.js';
 import { purpose } from '../../../src/core/timer/commands.js';
+import { saveActiveSession } from '../../../src/core/timer/store.js';
+import { ArtifactManager } from '../../../src/core/runtime/artifacts/ArtifactManager.js';
 import { RuntimeStatusCommand } from '../../../src/core/runtime/status.js';
+import { RuntimeStore } from '../../../src/storage/fs/RuntimeStore.js';
 
 function jsonResponse(data: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(data), {
@@ -92,5 +95,139 @@ describe('RuntimeStatusCommand', () => {
     expect(payload.ticket.state).toBe('CONTEXT_IMPORTED');
     expect(payload.session.state).toBe('ACTIVE');
     expect(payload.source).toBe('active_timer');
+  });
+
+  it('shows runtime activity when an agent cycle is running', async () => {
+    const timestamp = '2026-04-23T03:19:22.283Z';
+    const runtimeStore = new RuntimeStore();
+    const artifactManager = new ArtifactManager(runtimeStore, tempDir);
+
+    await saveActiveSession({
+      session_id: 'sess-runtime-status',
+      jira_issue_key: 'REB-232',
+      jira_ticket: {
+        key: 'REB-232',
+        summary: 'Improve orchestrate terminal summaries',
+        status: 'In Progress',
+        assignee: 'Emiliano',
+        description_text: 'Structured runtime test fixture',
+        url: 'https://example.atlassian.net/browse/REB-232',
+      },
+      openspec_change: {
+        name: 'reb-232-runtime-status',
+        path: path.join(tempDir, 'openspec', 'changes', 'reb-232-runtime-status'),
+        schema: 'spec-driven',
+      },
+      started_at: timestamp,
+      started_at_local: timestamp,
+      user_email: 'dev@example.com',
+      status: 'running',
+      command: 'purpose',
+      cwd: tempDir,
+      notes: null,
+      current_block: {
+        block_id: 'block-1',
+        actor_mode: 'human',
+        work_kind: 'implementation',
+        description: 'Review runtime state',
+        source: 'manual',
+        started_at: timestamp,
+        started_at_local: timestamp,
+      },
+      blocks: [
+        {
+          block_id: 'block-1',
+          actor_mode: 'human',
+          work_kind: 'implementation',
+          description: 'Review runtime state',
+          source: 'manual',
+          started_at: timestamp,
+          started_at_local: timestamp,
+        },
+      ],
+    });
+
+    await runtimeStore.saveTicketRuntime({
+      runtime_version: 1,
+      created_at: timestamp,
+      updated_at: timestamp,
+      ticket_key: 'REB-232',
+      state: 'PLANNED',
+      summary: 'Improve orchestrate terminal summaries',
+      active_session_id: 'sess-runtime-status',
+      active_change_name: 'reb-232-runtime-status',
+    });
+
+    await runtimeStore.saveSessionRuntime({
+      runtime_version: 1,
+      created_at: timestamp,
+      updated_at: timestamp,
+      session_id: 'sess-runtime-status',
+      ticket_key: 'REB-232',
+      developer_id: 'dev@example.com',
+      started_at: timestamp,
+      ended_at: null,
+      state: 'ACTIVE',
+      command: 'purpose',
+      cwd: tempDir,
+      change_name: 'reb-232-runtime-status',
+      autonomy_level: 'L2_ASSISTED',
+      active_mode: 'human',
+      active_kind: 'implementation',
+      current_cycle: 1,
+      last_timer_status: 'running',
+    });
+
+    await runtimeStore.saveChangeRuntime({
+      runtime_version: 1,
+      created_at: timestamp,
+      updated_at: timestamp,
+      change_name: 'reb-232-runtime-status',
+      ticket_key: 'REB-232',
+      state: 'TASKED',
+      validation_status: 'PENDING',
+      archive_eligible: false,
+      worklog_eligible: true,
+    });
+
+    await runtimeStore.saveExecutionCycle({
+      runtime_version: 1,
+      created_at: timestamp,
+      updated_at: timestamp,
+      cycle_id: 'cycle-001',
+      session_id: 'sess-runtime-status',
+      ticket_key: 'REB-232',
+      change_name: 'reb-232-runtime-status',
+      iteration_no: 1,
+      started_at: timestamp,
+      state: 'RUNNING',
+      initiated_by: 'agent',
+      trigger_reason: 'implementation_agent_started',
+    });
+
+    await artifactManager.writeAgentRun('REB-232', 'reb-232-runtime-status', {
+      runtime_version: 1,
+      created_at: timestamp,
+      updated_at: timestamp,
+      agent_run_id: 'run-implementation',
+      agent_name: 'implementation_agent',
+      session_id: 'sess-runtime-status',
+      ticket_key: 'REB-232',
+      cycle_id: 'cycle-001',
+      status: 'RUNNING',
+      started_at: timestamp,
+      ended_at: null,
+      input_ref: '.openspec/runtime/tickets/REB-232/context/normalized-context.json',
+    });
+
+    consoleLogSpy.mockClear();
+
+    const command = new RuntimeStatusCommand();
+    await command.execute();
+
+    const output = consoleLogSpy.mock.calls.map((call) => String(call[0] ?? '')).join('\n');
+    expect(output).toContain('Activity: ai_autonomous / implementation');
+    expect(output).toContain('Running agent: implementation_agent');
+    expect(output).toContain('Timer block: human / implementation');
   });
 });

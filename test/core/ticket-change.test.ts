@@ -151,6 +151,8 @@ Necesitamos explicar bloqueos del runtime con contexto accionable.
     const tasks = await fs.readFile(path.join(result.path, 'tasks.md'), 'utf-8');
     const spec = await fs.readFile(path.join(result.path, 'specs', result.name, 'spec.md'), 'utf-8');
 
+    expect(tasks).toContain('- [ ] 1.4 Validate the implemented change');
+    expect(tasks).not.toContain('archive it');
     expect(tasks).toContain('2.1 Implement and verify CA-1: Explicación humana');
     expect(tasks).toContain('2.2 Implement and verify CA-2: JSON estructurado');
     expect(spec).toContain('Imported goals:');

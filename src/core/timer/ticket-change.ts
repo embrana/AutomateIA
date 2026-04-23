@@ -321,7 +321,7 @@ function buildTasks(ticket: ImportedJiraTicket): string {
 - [ ] 1.1 Review imported Jira ticket context for \`${ticket.key}\`
 - [ ] 1.2 Confirm affected capabilities and acceptance criteria
 - [ ] 1.3 Implement the requested change
-- [ ] 1.4 Validate the change and archive it
+- [ ] 1.4 Validate the implemented change
 ${acceptanceTasks}
 `;
 }

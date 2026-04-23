@@ -203,6 +203,24 @@ describe('RuntimeExplainCommand', () => {
     expect(explanation.explanation?.primary_reason).toContain('archive is allowed');
   });
 
+  it('suggests runtime explain when human escalation has no pending approval artifact', async () => {
+    await seedRuntime({
+      ticketState: 'HUMAN_ESCALATION_REQUIRED',
+      sessionState: 'AWAITING_HUMAN',
+      changeState: 'UNDER_REVIEW',
+      validationStatus: 'BLOCKED',
+      archiveEligible: false,
+      currentCycleState: 'FAILED_ESCALATED',
+      currentCycleNumber: 1,
+    });
+
+    const explanation = await createCommand().explain();
+
+    expect(explanation.suggested_next_action?.route).toBe('approval');
+    expect(explanation.suggested_next_action?.command).toBe('osj runtime explain');
+    expect(explanation.suggested_next_action?.summary).toContain('human decision');
+  });
+
   it('falls back to latest runtime when there is no active session', async () => {
     const { ticketKey } = await seedRuntime({
       ticketKey: 'PROJ-200',

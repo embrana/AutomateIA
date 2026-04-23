@@ -1,6 +1,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import type {
+  AgentRun,
   ApprovalRequest,
   ChangeRuntime,
   ExecutionCycle,
@@ -65,6 +66,13 @@ export class RuntimeStore {
 
   getCyclePath(ticketKey: string, changeName: string, cycleId: string, projectDir = process.cwd()): string {
     return path.join(this.getCyclesDir(ticketKey, changeName, projectDir), `${cycleId}.json`);
+  }
+
+  getAgentRunsDir(ticketKey: string, changeName?: string, projectDir = process.cwd()): string {
+    if (changeName) {
+      return path.join(this.getChangeDir(ticketKey, changeName, projectDir), 'agent-runs');
+    }
+    return path.join(this.getTicketDir(ticketKey, projectDir), 'agent-runs');
   }
 
   getApprovalsDir(ticketKey: string, projectDir = process.cwd()): string {
@@ -149,6 +157,26 @@ export class RuntimeStore {
       return approvals
         .filter((approval): approval is ApprovalRequest => approval !== null)
         .sort((a, b) => a.created_at.localeCompare(b.created_at));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        return [];
+      }
+      throw error;
+    }
+  }
+
+  async listAgentRuns(ticketKey: string, changeName?: string, projectDir = process.cwd()): Promise<AgentRun[]> {
+    try {
+      const agentRunsDir = this.getAgentRunsDir(ticketKey, changeName, projectDir);
+      const entries = await fs.readdir(agentRunsDir, { withFileTypes: true });
+      const runs = await Promise.all(
+        entries
+          .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
+          .map(async (entry) => readJsonFile<AgentRun>(path.join(agentRunsDir, entry.name)))
+      );
+      return runs
+        .filter((run): run is AgentRun => run !== null)
+        .sort((a, b) => a.started_at.localeCompare(b.started_at));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
         return [];

@@ -39,6 +39,7 @@ import { buildBlockedArchiveComment } from '../core/timer/archive-comment.js';
 import { getActiveSession as getActiveTimerSession } from '../core/timer/store.js';
 import { RuntimeStatusCommand } from '../core/runtime/status.js';
 import { RuntimeExplainCommand } from '../core/runtime/explain.js';
+import { printOrchestrateTerminalSummary } from '../core/runtime/orchestrate-summary.js';
 import { SessionManager } from '../core/runtime/session/SessionManager.js';
 import { AgentOrchestrator } from '../core/runtime/orchestration/AgentOrchestrator.js';
 import { ApprovalManager } from '../core/runtime/approvals/ApprovalManager.js';
@@ -540,6 +541,11 @@ orchestrateCmd
       for (const summary of results) {
         printAgentExecutionSummary(summary);
       }
+      printOrchestrateTerminalSummary({
+        requestedStage: until,
+        executionSummaries: results,
+        explanation: await runtimeExplainCommand.explain(),
+      });
     } catch (error) {
       console.log();
       ora().fail(`Error: ${(error as Error).message}`);

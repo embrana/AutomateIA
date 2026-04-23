@@ -482,7 +482,7 @@ export class RuntimeExplainCommand {
       return {
         route: 'approval',
         summary: 'A human decision is required before the runtime can continue.',
-        command: null,
+        command: 'osj runtime explain',
       };
     }
 
