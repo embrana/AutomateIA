@@ -21,6 +21,13 @@ This backlog turns the architecture into a phased implementation plan for Codex.
   - current ticket/session/change state
   - why no agent was executed
   - the next actionable command, for example `osj orchestrate --until implementation` or `osj approval show`
+- `osj orchestrate --until <stage>` should also print an explicit terminal summary when a rerun ends in escalation, approval gating, or any other non-success stop condition.
+- That terminal summary should include:
+  - the last agent that ran
+  - whether the cycle ended in `FAILED_ESCALATED`, `FAILED_RETRYABLE`, or another gated state
+  - the primary reason, for example diff budget exceeded, critic findings remain, or `tasks.md` is incomplete
+  - the approval id when one was created
+  - the next actionable command, for example `osj approval show`, `osj approval accept <id>`, or `osj orchestrate --until delivery`
 - `osj runtime status` and future `osj runtime explain` should stay aligned with that guidance so developers are never left with an empty terminal and no explanation.
 - `osj runtime explain` should distinguish policy-budget escalations from generic cycle failures.
 - When an implementation or critic cycle is cut off by diff/file-count policy, the explanation should include:

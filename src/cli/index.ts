@@ -38,6 +38,7 @@ import {
 import { buildBlockedArchiveComment } from '../core/timer/archive-comment.js';
 import { getActiveSession as getActiveTimerSession } from '../core/timer/store.js';
 import { RuntimeStatusCommand } from '../core/runtime/status.js';
+import { RuntimeExplainCommand } from '../core/runtime/explain.js';
 import { SessionManager } from '../core/runtime/session/SessionManager.js';
 import { AgentOrchestrator } from '../core/runtime/orchestration/AgentOrchestrator.js';
 import { ApprovalManager } from '../core/runtime/approvals/ApprovalManager.js';
@@ -64,6 +65,7 @@ const { version } = require('../../package.json');
 const invokedName = path.basename(process.argv[1] || 'osj');
 const cliName = invokedName === 'openspec.js' ? 'osj' : invokedName;
 const runtimeStatusCommand = new RuntimeStatusCommand();
+const runtimeExplainCommand = new RuntimeExplainCommand();
 const sessionManager = new SessionManager();
 const agentOrchestrator = new AgentOrchestrator();
 const approvalManager = new ApprovalManager();
@@ -469,6 +471,20 @@ runtimeCmd
   .action(async (options: { json?: boolean }) => {
     try {
       await runtimeStatusCommand.execute(options);
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+runtimeCmd
+  .command('explain')
+  .description('Explain the current or latest OpenSpec runtime state')
+  .option('--json', 'Output the explanation as JSON')
+  .action(async (options: { json?: boolean }) => {
+    try {
+      await runtimeExplainCommand.execute(options);
     } catch (error) {
       console.log();
       ora().fail(`Error: ${(error as Error).message}`);
