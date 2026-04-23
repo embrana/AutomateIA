@@ -89,26 +89,84 @@ function cleanMarkdownBlock(text: string): string {
     .trim();
 }
 
-function getSection(description: string, sectionName: string): string {
-  const escaped = sectionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const pattern = new RegExp(`^##\\s+${escaped}\\s*$\\n?([\\s\\S]*?)(?=^##\\s+|(?![\\s\\S]))`, 'im');
-  const match = description.match(pattern);
-  return cleanMarkdownBlock(match?.[1] ?? '');
+const SECTION_ALIASES = {
+  context: ['Context', 'Contexto'],
+  goals: ['Goals', 'Objetivos', 'Objetivo'],
+  nonGoals: ['Non-Goals', 'Non Goals', 'No objetivos', 'No objetivos principales'],
+  acceptanceCriteria: ['Acceptance Criteria', 'Criterios de aceptacion', 'Criterios de aceptación'],
+  businessRules: ['Business Rules', 'Reglas de negocio'],
+  domainContracts: [
+    'Domain / Data / Integration Contracts',
+    'Domain Data Integration Contracts',
+    'Contratos de dominio datos integraciones',
+    'Contratos de dominio / datos / integraciones',
+    'Contratos de dominio/datos/integraciones',
+  ],
+  uxErrorStates: [
+    'UX / Error States',
+    'UX Error States',
+    'Estados UX / Error',
+    'Estados UX/Error',
+    'Estados de UX / Error',
+    'Estados de UX/Error',
+  ],
+  outOfScope: ['Out of Scope', 'Fuera de alcance'],
+  traceability: ['Traceability', 'Trazabilidad'],
+} as const;
+
+function normalizeHeading(value: string): string {
+  return value
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getLevelTwoSections(description: string): Map<string, string> {
+  const sections = new Map<string, string>();
+  const matches = Array.from(description.matchAll(/^##\s+(.+?)\s*$/gm));
+
+  matches.forEach((match, index) => {
+    const next = matches[index + 1];
+    const bodyStart = match.index! + match[0].length;
+    const bodyEnd = next?.index ?? description.length;
+    const heading = cleanMarkdownBlock(match[1]);
+    const body = cleanMarkdownBlock(description.slice(bodyStart, bodyEnd));
+    const normalized = normalizeHeading(heading);
+
+    if (!sections.has(normalized)) {
+      sections.set(normalized, body);
+    }
+  });
+
+  return sections;
+}
+
+function getSection(sections: Map<string, string>, aliases: readonly string[]): string {
+  for (const alias of aliases) {
+    const section = sections.get(normalizeHeading(alias));
+    if (section) {
+      return section;
+    }
+  }
+  return '';
 }
 
 function extractSpecTitle(description: string, fallback: string): string {
-  const match = description.match(/^#\s*SPEC:\s*(.+)$/im);
+  const match = description.match(/^#\s*(?:SPEC|ESPEC)\s*:\s*(.+)$/im);
   return cleanMarkdownBlock(match?.[1] ?? fallback);
 }
 
 function parseAcceptanceCriteria(section: string): AcceptanceCriterion[] {
-  const matches = Array.from(section.matchAll(/^###\s+(CA-\d+)\s*[—-]\s*(.+?)\s*$/gm));
+  const matches = Array.from(section.matchAll(/^###\s+(CA-\d+)\s*(?:[—–-]|:)\s*(.+?)\s*$/gim));
   return matches.map((match, index) => {
     const next = matches[index + 1];
     const bodyStart = match.index! + match[0].length;
     const bodyEnd = next?.index ?? section.length;
     return {
-      id: match[1],
+      id: match[1].toUpperCase(),
       title: cleanMarkdownBlock(match[2]),
       body: cleanMarkdownBlock(section.slice(bodyStart, bodyEnd)),
     };
@@ -116,9 +174,10 @@ function parseAcceptanceCriteria(section: string): AcceptanceCriterion[] {
 }
 
 export function parseStructuredSdd(description: string, fallbackTitle: string): StructuredSdd | null {
-  const acceptanceSection = getSection(description, 'Acceptance Criteria');
+  const sections = getLevelTwoSections(description);
+  const acceptanceSection = getSection(sections, SECTION_ALIASES.acceptanceCriteria);
   const acceptanceCriteria = parseAcceptanceCriteria(acceptanceSection);
-  const businessRules = getSection(description, 'Business Rules');
+  const businessRules = getSection(sections, SECTION_ALIASES.businessRules);
 
   if (acceptanceCriteria.length === 0 && !businessRules) {
     return null;
@@ -126,15 +185,15 @@ export function parseStructuredSdd(description: string, fallbackTitle: string): 
 
   return {
     title: extractSpecTitle(description, fallbackTitle),
-    context: getSection(description, 'Context'),
-    goals: getSection(description, 'Goals'),
-    nonGoals: getSection(description, 'Non-Goals'),
+    context: getSection(sections, SECTION_ALIASES.context),
+    goals: getSection(sections, SECTION_ALIASES.goals),
+    nonGoals: getSection(sections, SECTION_ALIASES.nonGoals),
     acceptanceCriteria,
     businessRules,
-    domainContracts: getSection(description, 'Domain / Data / Integration Contracts'),
-    uxErrorStates: getSection(description, 'UX / Error States'),
-    outOfScope: getSection(description, 'Out of Scope'),
-    traceability: getSection(description, 'Traceability'),
+    domainContracts: getSection(sections, SECTION_ALIASES.domainContracts),
+    uxErrorStates: getSection(sections, SECTION_ALIASES.uxErrorStates),
+    outOfScope: getSection(sections, SECTION_ALIASES.outOfScope),
+    traceability: getSection(sections, SECTION_ALIASES.traceability),
   };
 }
 

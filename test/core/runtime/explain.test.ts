@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { promises as fs } from 'fs';
 import os from 'os';
 import path from 'path';
@@ -129,6 +129,53 @@ describe('RuntimeExplainCommand', () => {
     expect(explanation.suggested_next_action?.route).toBe('approval');
     expect(explanation.suggested_next_action?.command).toBe('osj approval show');
     expect(explanation.primary_evidence_ref).toBe(closureRef);
+  });
+
+  it('renders human-readable approval guidance', async () => {
+    const { ticketKey, changeName } = await seedRuntime({
+      ticketState: 'HUMAN_ESCALATION_REQUIRED',
+      sessionState: 'AWAITING_HUMAN',
+      changeState: 'VALIDATED',
+      validationStatus: 'PASSED',
+      archiveEligible: false,
+    });
+
+    const closureRef = await artifactManager.writeChangeJson(ticketKey, changeName, 'delivery', 'closure-summary.json', {
+      completed_scope: ['Prepared closeout artifacts'],
+      remaining_risks: ['Archive is still pending manual approval'],
+    });
+
+    await runtimeStore.saveApprovalRequest({
+      runtime_version: 1,
+      created_at: DEFAULT_TIMESTAMP,
+      updated_at: DEFAULT_TIMESTAMP,
+      approval_id: 'approval-archive-human',
+      ticket_key: ticketKey,
+      session_id: 'sess-1',
+      change_name: changeName,
+      scope: 'archive',
+      reason: 'Archive requires human approval under the current autonomy policy.',
+      evidence_refs: [closureRef],
+      status: 'PENDING',
+      resolved_at: null,
+    });
+
+    const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    let output = '';
+    try {
+      await createCommand().execute();
+      output = consoleLogSpy.mock.calls.map((call) => String(call[0] ?? '')).join('\n');
+    } finally {
+      consoleLogSpy.mockRestore();
+    }
+
+    expect(output).toContain('Pending approvals:');
+    expect(output).toContain('approval-archive-human [archive]: Archive requires human approval under the current autonomy policy.');
+    expect(output).toContain('show: osj approval show');
+    expect(output).toContain('accept: osj approval accept approval-archive-human --reason "approved by developer"');
+    expect(output).toContain('reject: osj approval reject approval-archive-human --reason "rejected by developer"');
+    expect(output).toContain(`Primary evidence: ${closureRef}`);
   });
 
   it('reports ready for archive and suggests osj archive', async () => {

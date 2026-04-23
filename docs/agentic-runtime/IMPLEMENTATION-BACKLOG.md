@@ -28,6 +28,16 @@ This backlog turns the architecture into a phased implementation plan for Codex.
   - the primary reason, for example diff budget exceeded, critic findings remain, or `tasks.md` is incomplete
   - the approval id when one was created
   - the next actionable command, for example `osj approval show`, `osj approval accept <id>`, or `osj orchestrate --until delivery`
+- `osj orchestrate --until <stage>` should print in-progress feedback while long-running agents are executing, especially `implementation_agent`.
+- The in-progress feedback should include:
+  - the active agent name
+  - whether the runtime is waiting on a backend, applying workspace edits, or running validation commands
+  - elapsed time since the agent started
+  - a short heartbeat message so the terminal never looks frozen during a long run
+- When available, the in-progress status should also surface bounded execution details such as:
+  - backend name and mode
+  - current phase, for example `reasoning`, `editing files`, or `running tests`
+  - the current cycle id
 - `osj runtime status` and future `osj runtime explain` should stay aligned with that guidance so developers are never left with an empty terminal and no explanation.
 - `osj runtime explain` should distinguish policy-budget escalations from generic cycle failures.
 - When an implementation or critic cycle is cut off by diff/file-count policy, the explanation should include:
@@ -41,6 +51,12 @@ This backlog turns the architecture into a phased implementation plan for Codex.
   - approval reasons
   - critic and validation summaries
   - future terminal summaries emitted by `osj orchestrate`
+- The autonomous diff/file-count budget should be configurable per environment or per run so larger but still valid features do not always require manual overrides.
+- At minimum, the runtime should support one of these paths:
+  - global config for `max_diff_lines_without_human_review` and related thresholds
+  - per-profile policy levels such as `strict`, `standard`, and `large_feature`
+  - explicit CLI override for a single run, with the chosen budget persisted in runtime artifacts for traceability
+- `osj runtime explain` and approval artifacts should surface the active policy profile or configured budget so developers understand why a feature was gated.
 
 ## Status Snapshot
 

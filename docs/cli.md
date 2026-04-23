@@ -391,7 +391,7 @@ openspec/changes/<change-name>/
 └── specs/<change-name>/spec.md
 ```
 
-The initial delta spec is built from the Jira description. If the description already contains OpenSpec delta sections such as `## ADDED Requirements`, OpenSpec writes it as-is. If the description contains structured SDD sections such as `## Acceptance Criteria`, `## Business Rules`, `## Domain / Data / Integration Contracts`, `## UX / Error States`, or `## Out of Scope`, OpenSpec creates a richer requirement and turns acceptance criteria headings like `### CA-1 — ...` into OpenSpec scenarios.
+The initial delta spec is built from the Jira description. If the description already contains OpenSpec delta sections such as `## ADDED Requirements`, OpenSpec writes it as-is. If the description contains structured SDD sections such as `## Acceptance Criteria`, `## Business Rules`, `## Domain / Data / Integration Contracts`, `## UX / Error States`, or `## Out of Scope`, OpenSpec creates a richer requirement and turns acceptance criteria headings like `### CA-1 — ...`, `### CA-1 - ...`, or `### CA-1: ...` into OpenSpec scenarios. The structured importer also accepts Spanish section aliases such as `## Contexto`, `## Objetivos`, `## Criterios de aceptación`, `## Reglas de negocio`, `## Estados de UX / Error`, `## Fuera de alcance`, and `## Trazabilidad`.
 
 ### `openspec timer`
 
