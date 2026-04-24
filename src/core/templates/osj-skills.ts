@@ -127,3 +127,101 @@ export function getOsjTimerReportSkillTemplate(): SkillTemplate {
     metadata: { author: 'openspec', version: '1.0' },
   };
 }
+
+export function getOsjTicketsSkillTemplate(): SkillTemplate {
+  return {
+    name: 'openspec-osj-tickets',
+    description: 'Run `osj tickets --json` and summarize available Jira tickets in a structured list.',
+    instructions: buildReadOnlySkillInstructions(
+      '/osj-tickets',
+      'osj tickets --json',
+      `- List tickets in a structured, scan-friendly way that includes ticket key and title/summary.
+- Include status, assignee, and URL when the CLI exposes them.
+- In **Next step**, suggest \`/osj-purpose-start <KEY>\` using a concrete ticket from the returned list when one exists.`
+    ),
+    license: 'MIT',
+    compatibility: 'Requires the osj CLI in the current project.',
+    metadata: { author: 'openspec', version: '1.0' },
+  };
+}
+
+export function getOsjPurposeStartSkillTemplate(): SkillTemplate {
+  return {
+    name: 'openspec-osj-purpose-start',
+    description: 'List available Jira tickets or start an OpenSpec session with `osj purpose --jira <KEY> --import-ticket`.',
+    instructions: `Help the user start an OpenSpec session from a Jira ticket.
+
+**Input**
+
+Text supplied with \`/osj-purpose-start\` can be:
+
+- a Jira issue key like \`REB-234\`
+- explicit CLI args like \`--jira REB-234 --create-change\`
+- nothing, in which case you should list available tickets instead of starting a session
+
+**Steps**
+
+1. Inspect the supplied text.
+2. If no Jira issue key or \`--jira\` argument is present:
+   - run \`osj tickets --json\`
+   - summarize tickets in a structured list that includes ticket key and title/summary
+   - do not start a session yet
+   - in **Next step**, show the exact command to run, for example \`/osj-purpose-start REB-234\`
+3. If the supplied text starts with an issue key like \`REB-234\`:
+   - build \`osj purpose --jira REB-234 --import-ticket\`
+   - append any remaining text after the issue key exactly as written
+4. If the supplied text already uses explicit CLI arguments:
+   - run \`osj purpose\` with those arguments
+   - ensure \`--import-ticket\` is included unless it is already present
+5. Run the command in the current project.
+6. Summarize the result for the user.
+
+**Response format**
+
+Respond with compact Markdown sections in this order:
+
+**Status**
+- One line stating whether tickets were listed or a session was started.
+
+**Command**
+- Show the exact \`osj\` CLI command that was run.
+- If no command was run because the user did not provide a ticket yet, write \`- Not run.\`
+
+**Key facts**
+- Short bullets with the most important exact values from the CLI output.
+- When listing tickets, use bullets like \`REB-234 — Title\`.
+
+**Conclusion**
+- One or two bullets explaining what the current state means for the user.
+
+**State conflicts**
+- List conflicting, stale, or blocking state combinations the user should notice.
+- If none exist, write \`- None.\`
+
+**Next step**
+- Give the safest next command.
+- If tickets were only listed, include a concrete example such as \`/osj-purpose-start REB-234\`.
+
+**Evidence**
+- Include only when the CLI points to relevant artifact paths, URLs, or structured output worth surfacing.
+
+**Style rules**
+
+- Do not narrate execution with phrases like "I ran", "The CLI reported", or "using the skill".
+- Do not mention the helper, prompt, or skill implementation details.
+- Prefer bullets over paragraphs.
+- Prefer exact CLI values over guesses.
+- Keep the answer scan-friendly and operational.
+- If the command fails because a session already exists, call that out in **State conflicts** and suggest the safest next command such as \`osj runtime status\`, \`osj timer report\`, \`osj archive\`, or \`osj timer cancel\`.
+
+**Guardrails**
+
+- Mutate state only when a Jira issue key or explicit \`--jira\` argument is present.
+- Never guess a Jira issue key. If none was provided, list tickets instead.
+- Prefer the real \`osj\` CLI output over guesses.
+- If the command fails, show the relevant error and suggest the safest next step.`,
+    license: 'MIT',
+    compatibility: 'Requires the osj CLI in the current project.',
+    metadata: { author: 'openspec', version: '1.0' },
+  };
+}

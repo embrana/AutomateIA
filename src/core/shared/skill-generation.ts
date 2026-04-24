@@ -28,10 +28,14 @@ import {
   getOpsxOnboardCommandTemplate,
   getOpsxProposeCommandTemplate,
   getOsjApprovalShowSkillTemplate,
+  getOsjTicketsSkillTemplate,
+  getOsjPurposeStartSkillTemplate,
   getOsjRuntimeExplainSkillTemplate,
   getOsjRuntimeStatusSkillTemplate,
   getOsjTimerReportSkillTemplate,
   getOsjApprovalShowCommandTemplate,
+  getOsjTicketsCommandTemplate,
+  getOsjPurposeStartCommandTemplate,
   getOsjRuntimeExplainCommandTemplate,
   getOsjRuntimeStatusCommandTemplate,
   getOsjTimerReportCommandTemplate,
@@ -58,6 +62,8 @@ export interface CommandTemplateEntry {
 
 function getCodexCompanionCommandTemplates(): CommandTemplateEntry[] {
   return [
+    { template: getOsjTicketsCommandTemplate(), id: 'osj-tickets' },
+    { template: getOsjPurposeStartCommandTemplate(), id: 'osj-purpose-start' },
     { template: getOsjRuntimeStatusCommandTemplate(), id: 'osj-runtime-status' },
     { template: getOsjRuntimeExplainCommandTemplate(), id: 'osj-runtime-explain' },
     { template: getOsjApprovalShowCommandTemplate(), id: 'osj-approval-show' },
@@ -67,6 +73,8 @@ function getCodexCompanionCommandTemplates(): CommandTemplateEntry[] {
 
 function getCodexCompanionSkillTemplates(): SkillTemplateEntry[] {
   return [
+    { template: getOsjTicketsSkillTemplate(), dirName: 'openspec-osj-tickets', workflowId: 'osj-tickets' },
+    { template: getOsjPurposeStartSkillTemplate(), dirName: 'openspec-osj-purpose-start', workflowId: 'osj-purpose-start' },
     { template: getOsjRuntimeStatusSkillTemplate(), dirName: 'openspec-osj-runtime-status', workflowId: 'osj-runtime-status' },
     { template: getOsjRuntimeExplainSkillTemplate(), dirName: 'openspec-osj-runtime-explain', workflowId: 'osj-runtime-explain' },
     { template: getOsjApprovalShowSkillTemplate(), dirName: 'openspec-osj-approval-show', workflowId: 'osj-approval-show' },

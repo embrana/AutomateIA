@@ -181,16 +181,22 @@ describe('InitCommand', () => {
       const runtimeExplainPrompt = path.join(codexHome, 'prompts', 'osj-runtime-explain.md');
       const approvalShowPrompt = path.join(codexHome, 'prompts', 'osj-approval-show.md');
       const timerReportPrompt = path.join(codexHome, 'prompts', 'osj-timer-report.md');
+      const ticketsPrompt = path.join(codexHome, 'prompts', 'osj-tickets.md');
+      const purposeStartPrompt = path.join(codexHome, 'prompts', 'osj-purpose-start.md');
 
       expect(await fileExists(runtimeStatusPrompt)).toBe(true);
       expect(await fileExists(runtimeExplainPrompt)).toBe(true);
       expect(await fileExists(approvalShowPrompt)).toBe(true);
       expect(await fileExists(timerReportPrompt)).toBe(true);
+      expect(await fileExists(ticketsPrompt)).toBe(true);
+      expect(await fileExists(purposeStartPrompt)).toBe(true);
 
       const runtimeStatusSkill = path.join(testDir, '.codex', 'skills', 'openspec-osj-runtime-status', 'SKILL.md');
       const runtimeExplainSkill = path.join(testDir, '.codex', 'skills', 'openspec-osj-runtime-explain', 'SKILL.md');
+      const purposeStartSkill = path.join(testDir, '.codex', 'skills', 'openspec-osj-purpose-start', 'SKILL.md');
       expect(await fileExists(runtimeStatusSkill)).toBe(true);
       expect(await fileExists(runtimeExplainSkill)).toBe(true);
+      expect(await fileExists(purposeStartSkill)).toBe(true);
 
       const promptContent = await fs.readFile(runtimeStatusPrompt, 'utf-8');
       expect(promptContent).toContain('openspec-osj-runtime-status');
@@ -201,6 +207,10 @@ describe('InitCommand', () => {
       expect(skillContent).toContain('**Status**');
       expect(skillContent).toContain('**State conflicts**');
       expect(skillContent).toContain('Do not narrate execution');
+
+      const purposeSkillContent = await fs.readFile(purposeStartSkill, 'utf-8');
+      expect(purposeSkillContent).toContain('run `osj tickets --json`');
+      expect(purposeSkillContent).toContain('build `osj purpose --jira REB-234 --import-ticket`');
     });
 
     it('should create skills for multiple tools at once', async () => {

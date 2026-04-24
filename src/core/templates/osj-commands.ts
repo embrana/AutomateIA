@@ -61,3 +61,31 @@ export function getOsjTimerReportCommandTemplate(): CommandTemplate {
     ),
   };
 }
+
+export function getOsjTicketsCommandTemplate(): CommandTemplate {
+  return {
+    name: 'OSJ: Tickets',
+    description: 'List assigned Jira tickets in a structured way through the osj CLI',
+    category: 'OSJ Jira',
+    tags: ['osj', 'tickets', 'jira', 'list'],
+    content: buildReadOnlyCommandContent(
+      '/osj-tickets',
+      'openspec-osj-tickets',
+      'osj tickets --json'
+    ),
+  };
+}
+
+export function getOsjPurposeStartCommandTemplate(): CommandTemplate {
+  return {
+    name: 'OSJ: Purpose Start',
+    description: 'List available Jira tickets or start an OpenSpec session from a chosen ticket',
+    category: 'OSJ Jira',
+    tags: ['osj', 'purpose', 'jira', 'timer'],
+    content: `Use the \`openspec-osj-purpose-start\` skill to either list available Jira tickets or start \`osj purpose --jira <KEY> --import-ticket\`.
+
+If the skill is not available in this project, fall back to:
+- \`osj tickets --json\` when no issue key was provided
+- \`osj purpose --jira <KEY> --import-ticket\` when a Jira issue key or explicit \`--jira\` argument was provided`,
+  };
+}

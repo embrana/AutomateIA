@@ -95,6 +95,8 @@ describe('skill-generation', () => {
       const dirNames = templates.map((entry) => entry.dirName);
 
       expect(dirNames).toContain('openspec-explore');
+      expect(dirNames).toContain('openspec-osj-tickets');
+      expect(dirNames).toContain('openspec-osj-purpose-start');
       expect(dirNames).toContain('openspec-osj-runtime-status');
       expect(dirNames).toContain('openspec-osj-runtime-explain');
       expect(dirNames).toContain('openspec-osj-approval-show');
@@ -104,6 +106,8 @@ describe('skill-generation', () => {
     it('should expose managed skill entries for codex', () => {
       expect(getManagedSkillEntriesForTool('codex', ['explore']).map((entry) => entry.dirName)).toEqual([
         'openspec-explore',
+        'openspec-osj-tickets',
+        'openspec-osj-purpose-start',
         'openspec-osj-runtime-status',
         'openspec-osj-runtime-explain',
         'openspec-osj-approval-show',
@@ -122,6 +126,17 @@ describe('skill-generation', () => {
       expect(runtimeStatusSkill?.template.instructions).toContain('**Next step**');
       expect(runtimeStatusSkill?.template.instructions).toContain('Do not narrate execution');
       expect(runtimeStatusSkill?.template.instructions).toContain('Do not mention the helper, prompt, or skill implementation details.');
+    });
+
+    it('should give Codex /osj-purpose-start skill a list-or-start contract', () => {
+      const purposeStartSkill = getSkillTemplatesForTool('codex', ['explore'])
+        .find((entry) => entry.dirName === 'openspec-osj-purpose-start');
+
+      expect(purposeStartSkill?.template.instructions).toContain('If no Jira issue key or `--jira` argument is present:');
+      expect(purposeStartSkill?.template.instructions).toContain('run `osj tickets --json`');
+      expect(purposeStartSkill?.template.instructions).toContain('build `osj purpose --jira REB-234 --import-ticket`');
+      expect(purposeStartSkill?.template.instructions).toContain('**Command**');
+      expect(purposeStartSkill?.template.instructions).toContain('Never guess a Jira issue key.');
     });
   });
 
@@ -227,6 +242,8 @@ describe('skill-generation', () => {
 
       expect(ids).toContain('explore');
       expect(ids).toContain('apply');
+      expect(ids).toContain('osj-tickets');
+      expect(ids).toContain('osj-purpose-start');
       expect(ids).toContain('osj-runtime-status');
       expect(ids).toContain('osj-runtime-explain');
       expect(ids).toContain('osj-approval-show');
@@ -245,6 +262,8 @@ describe('skill-generation', () => {
     it('should expose managed command ids for codex', () => {
       expect(getManagedCommandIdsForTool('codex', ['explore'])).toEqual([
         'explore',
+        'osj-tickets',
+        'osj-purpose-start',
         'osj-runtime-status',
         'osj-runtime-explain',
         'osj-approval-show',
@@ -259,6 +278,16 @@ describe('skill-generation', () => {
       expect(runtimeStatus?.body).toContain('openspec-osj-runtime-status');
       expect(runtimeStatus?.body).not.toContain('**Steps**');
       expect(runtimeStatus?.body).not.toContain('**Guardrails**');
+    });
+
+    it('should keep the Codex /osj-purpose-start prompt minimal and skill-backed', () => {
+      const purposeStart = getCommandContentsForTool('codex', ['explore'])
+        .find((content) => content.id === 'osj-purpose-start');
+
+      expect(purposeStart?.body).toContain('openspec-osj-purpose-start');
+      expect(purposeStart?.body).toContain('osj tickets --json');
+      expect(purposeStart?.body).not.toContain('**Steps**');
+      expect(purposeStart?.body).not.toContain('**Guardrails**');
     });
   });
 

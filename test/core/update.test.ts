@@ -273,8 +273,11 @@ Old instructions content
         expect(await FileSystemUtils.fileExists(path.join(codexHome, 'prompts', 'osj-runtime-explain.md'))).toBe(true);
         expect(await FileSystemUtils.fileExists(path.join(codexHome, 'prompts', 'osj-approval-show.md'))).toBe(true);
         expect(await FileSystemUtils.fileExists(path.join(codexHome, 'prompts', 'osj-timer-report.md'))).toBe(true);
+        expect(await FileSystemUtils.fileExists(path.join(codexHome, 'prompts', 'osj-tickets.md'))).toBe(true);
+        expect(await FileSystemUtils.fileExists(path.join(codexHome, 'prompts', 'osj-purpose-start.md'))).toBe(true);
         expect(await FileSystemUtils.fileExists(path.join(testDir, '.codex', 'skills', 'openspec-osj-runtime-status', 'SKILL.md'))).toBe(true);
         expect(await FileSystemUtils.fileExists(path.join(testDir, '.codex', 'skills', 'openspec-osj-runtime-explain', 'SKILL.md'))).toBe(true);
+        expect(await FileSystemUtils.fileExists(path.join(testDir, '.codex', 'skills', 'openspec-osj-purpose-start', 'SKILL.md'))).toBe(true);
 
         const promptContent = await fs.readFile(path.join(codexHome, 'prompts', 'osj-runtime-status.md'), 'utf-8');
         expect(promptContent).toContain('openspec-osj-runtime-status');
@@ -285,6 +288,10 @@ Old instructions content
         expect(skillContent).toContain('**Conclusion**');
         expect(skillContent).toContain('**Next step**');
         expect(skillContent).toContain('Do not mention the helper, prompt, or skill implementation details.');
+
+        const purposeSkillContent = await fs.readFile(path.join(testDir, '.codex', 'skills', 'openspec-osj-purpose-start', 'SKILL.md'), 'utf-8');
+        expect(purposeSkillContent).toContain('run `osj tickets --json`');
+        expect(purposeSkillContent).toContain('Never guess a Jira issue key.');
       } finally {
         if (originalCodexHome === undefined) {
           delete process.env.CODEX_HOME;
