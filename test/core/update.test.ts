@@ -279,6 +279,12 @@ Old instructions content
         const promptContent = await fs.readFile(path.join(codexHome, 'prompts', 'osj-runtime-status.md'), 'utf-8');
         expect(promptContent).toContain('openspec-osj-runtime-status');
         expect(promptContent).not.toContain('**Steps**');
+
+        const skillContent = await fs.readFile(path.join(testDir, '.codex', 'skills', 'openspec-osj-runtime-status', 'SKILL.md'), 'utf-8');
+        expect(skillContent).toContain('**Response format**');
+        expect(skillContent).toContain('**Conclusion**');
+        expect(skillContent).toContain('**Next step**');
+        expect(skillContent).toContain('Do not mention the helper, prompt, or skill implementation details.');
       } finally {
         if (originalCodexHome === undefined) {
           delete process.env.CODEX_HOME;

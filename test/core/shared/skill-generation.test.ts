@@ -110,6 +110,19 @@ describe('skill-generation', () => {
         'openspec-osj-timer-report',
       ]);
     });
+
+    it('should give Codex /osj companion skills a structured non-narrative response contract', () => {
+      const runtimeStatusSkill = getSkillTemplatesForTool('codex', ['explore'])
+        .find((entry) => entry.dirName === 'openspec-osj-runtime-status');
+
+      expect(runtimeStatusSkill?.template.instructions).toContain('**Response format**');
+      expect(runtimeStatusSkill?.template.instructions).toContain('**Status**');
+      expect(runtimeStatusSkill?.template.instructions).toContain('**Conclusion**');
+      expect(runtimeStatusSkill?.template.instructions).toContain('**State conflicts**');
+      expect(runtimeStatusSkill?.template.instructions).toContain('**Next step**');
+      expect(runtimeStatusSkill?.template.instructions).toContain('Do not narrate execution');
+      expect(runtimeStatusSkill?.template.instructions).toContain('Do not mention the helper, prompt, or skill implementation details.');
+    });
   });
 
   describe('getCommandTemplates', () => {

@@ -16,9 +16,42 @@ Any text supplied with \`${commandLabel}\` should be appended as extra CLI argum
 3. If the command reports that no runtime, approval, or timer data exists, explain that clearly instead of failing silently.
 4. Summarize the result for the user.
 
-**Summarize**
+**Command-specific focus**
 
 ${summaryBullets}
+
+**Response format**
+
+Respond with compact Markdown sections in this order:
+
+**Status**
+- One line stating the outcome of the command.
+
+**Key facts**
+- Short bullets with the most important exact values from the CLI output.
+
+**Conclusion**
+- One or two bullets explaining what the current state means for the user.
+
+**State conflicts**
+- List conflicting, stale, or surprising state combinations that the user should notice.
+- If none exist, write \`- None.\`
+
+**Next step**
+- Give the safest next command or write \`- None.\` when no action is needed.
+
+**Evidence**
+- Include only when the CLI points to relevant artifact paths, evidence files, or structured output worth surfacing.
+
+**Style rules**
+
+- Do not narrate execution with phrases like "I ran", "The CLI reported", or "using the skill".
+- Do not mention the helper, prompt, or skill implementation details.
+- Prefer bullets over paragraphs.
+- Prefer exact CLI values over guesses.
+- Keep the answer scan-friendly and operational.
+- If the command shows that nothing is active or nothing exists, say that directly in **Status** and **Conclusion**.
+- If the CLI reveals stale or conflicting state, call it out explicitly in **State conflicts**.
 
 **Guardrails**
 

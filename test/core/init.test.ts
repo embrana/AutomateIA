@@ -195,6 +195,12 @@ describe('InitCommand', () => {
       const promptContent = await fs.readFile(runtimeStatusPrompt, 'utf-8');
       expect(promptContent).toContain('openspec-osj-runtime-status');
       expect(promptContent).not.toContain('**Steps**');
+
+      const skillContent = await fs.readFile(runtimeStatusSkill, 'utf-8');
+      expect(skillContent).toContain('**Response format**');
+      expect(skillContent).toContain('**Status**');
+      expect(skillContent).toContain('**State conflicts**');
+      expect(skillContent).toContain('Do not narrate execution');
     });
 
     it('should create skills for multiple tools at once', async () => {
