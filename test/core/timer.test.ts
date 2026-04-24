@@ -719,7 +719,7 @@ Permitir al Director Técnico ingresar y guardar su información general de perf
     expect(archived.paused_duration_seconds).toBeGreaterThan(0);
   });
 
-  it('keeps failed archive attempts as sync_pending and retries without extending duration', async () => {
+  it('keeps failed archive attempts as sync_pending and retries without extending duration even without explicit retry flag', async () => {
     vi.setSystemTime(new Date('2026-04-19T17:00:00.000Z'));
     fetchSpy
       .mockResolvedValueOnce(jsonResponse({ key: 'PROJ-123' }))
@@ -742,7 +742,7 @@ Permitir al Director Técnico ingresar y guardar su información general de perf
     vi.setSystemTime(new Date('2026-04-19T19:00:00.000Z'));
     fetchSpy.mockResolvedValueOnce(jsonResponse({ id: 'retry-1' }, { status: 201 }));
 
-    await archiveTimer({ retry: true });
+    await archiveTimer();
 
     expect(await getActiveSession()).toBeNull();
     const retryPayload = JSON.parse((fetchSpy.mock.calls[2][1] as RequestInit).body as string);

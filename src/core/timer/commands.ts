@@ -495,10 +495,10 @@ export async function purpose(issueKey: string, options: PurposeOptions = {}): P
 
   const existing = await getActiveSession();
   if (existing?.status === 'running' || existing?.status === 'paused') {
-    throw new Error("There is already an active OpenSpec session.\nUse 'openspec archive' or 'openspec timer cancel'.");
+    throw new Error("There is already an active OpenSpec session.\nUse 'osj archive' or 'osj timer cancel'.");
   }
   if (existing?.status === 'sync_pending') {
-    throw new Error("There is a pending OpenSpec worklog sync.\nUse 'openspec archive --retry' or 'openspec timer cancel'.");
+    throw new Error("There is a pending OpenSpec worklog sync.\nUse 'osj archive --retry' or 'osj timer cancel'.");
   }
 
   const config = getTimerConfig();
@@ -574,10 +574,10 @@ export async function startManualHumanTimer(
 
   const existing = await getActiveSession();
   if (existing?.status === 'running' || existing?.status === 'paused') {
-    throw new Error("There is already an active OpenSpec session.\nUse 'openspec archive' or 'openspec timer cancel'.");
+    throw new Error("There is already an active OpenSpec session.\nUse 'osj archive' or 'osj timer cancel'.");
   }
   if (existing?.status === 'sync_pending') {
-    throw new Error("There is a pending OpenSpec worklog sync.\nUse 'openspec archive --retry' or 'openspec timer cancel'.");
+    throw new Error("There is a pending OpenSpec worklog sync.\nUse 'osj archive --retry' or 'osj timer cancel'.");
   }
 
   const config = getTimerConfig();
@@ -653,9 +653,6 @@ export async function archiveTimer(options: ArchiveTimerOptions = {}): Promise<T
     const recoveredSession = await recoverPreviouslyClosedSyncPendingSession(session);
     if (recoveredSession) {
       return recoveredSession;
-    }
-    if (!options.retry) {
-      throw new Error("OpenSpec session is pending Jira sync.\nUse 'openspec archive --retry' to retry or 'openspec timer cancel' to discard it.");
     }
   }
 
@@ -765,7 +762,7 @@ export async function archiveTimer(options: ArchiveTimerOptions = {}): Promise<T
       );
     }
     throw new Error(
-      `Failed to create Jira worklog. Session saved as sync_pending. Use 'openspec archive --retry' after fixing the issue.\n${pendingSession.sync_error}`
+      `Failed to create Jira worklog. Session saved as sync_pending. Use 'osj archive --retry' after fixing the issue.\n${pendingSession.sync_error}`
     );
   }
 }
@@ -872,7 +869,7 @@ export async function switchBlock(options: SwitchBlockOptions): Promise<void> {
     throw new Error('No active OpenSpec session found.');
   }
   if (session.status === 'sync_pending') {
-    throw new Error("OpenSpec session is pending Jira sync.\nUse 'openspec archive --retry' to retry or 'openspec timer cancel' to discard it.");
+    throw new Error("OpenSpec session is pending Jira sync.\nUse 'osj archive --retry' to retry or 'osj timer cancel' to discard it.");
   }
   if (session.status === 'paused') {
     throw new Error("OpenSpec session is paused.\nUse 'openspec timer resume' before switching work blocks.");
@@ -933,7 +930,7 @@ export async function pause(): Promise<void> {
     throw new Error('No active OpenSpec session found.');
   }
   if (session.status === 'sync_pending') {
-    throw new Error("OpenSpec session is pending Jira sync.\nUse 'openspec archive --retry' to retry or 'openspec timer cancel' to discard it.");
+    throw new Error("OpenSpec session is pending Jira sync.\nUse 'osj archive --retry' to retry or 'osj timer cancel' to discard it.");
   }
   if (session.status === 'paused') {
     throw new Error('OpenSpec session is already paused.');
@@ -969,7 +966,7 @@ export async function resume(): Promise<void> {
     throw new Error('No active OpenSpec session found.');
   }
   if (session.status === 'sync_pending') {
-    throw new Error("OpenSpec session is pending Jira sync.\nUse 'openspec archive --retry' to retry or 'openspec timer cancel' to discard it.");
+    throw new Error("OpenSpec session is pending Jira sync.\nUse 'osj archive --retry' to retry or 'osj timer cancel' to discard it.");
   }
   if (session.status === 'running') {
     throw new Error('OpenSpec session is already running.');

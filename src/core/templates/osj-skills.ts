@@ -56,6 +56,9 @@ Respond with compact Markdown sections in this order:
 **Guardrails**
 
 - This helper is read-only. Do not mutate runtime state, approvals, timers, or Jira data.
+- Run only the exact CLI command defined for this helper.
+- Do not execute any other \`osj\` command or any other \`/osj-*\` helper on the user's behalf.
+- If another command would help, mention it only in **Next step**.
 - Prefer the real \`osj\` CLI output over guesses.
 - If the command fails, show the relevant error and suggest the safest next step.`;
 }
@@ -250,8 +253,11 @@ Text supplied with \`/osj-archive-session\` should be treated as extra CLI argum
    - default: \`osj archive --comment "Implementation session"\`
    - if the user provided extra arguments, append them exactly as written
    - if the user did not provide \`--comment\`, keep the default comment
-5. If the command fails with a network, auth, DNS, or \`fetch failed\` style error while talking to Jira, retry once with escalated permissions when the environment supports approvals.
-6. Summarize the result for the user.
+5. If the first archive attempt fails with a network, auth, DNS, or \`fetch failed\` style error while talking to Jira, retry once with escalated permissions when the environment supports approvals.
+6. If that first attempt leaves the session in \`sync_pending\`, treat the recovery path as:
+   - \`osj archive --retry\`
+   - do not recommend rerunning the original session-archive command
+7. Summarize the result for the user.
 
 **Response format**
 
@@ -293,6 +299,72 @@ Respond with compact Markdown sections in this order:
 - This helper is only for session/worklog closeout.
 - Never use it to archive an active change.
 - If the runtime still points at an active change, stop and tell the user instead of running \`osj archive\`.
+- If the first archive attempt leaves the session in \`sync_pending\`, prefer \`osj archive --retry\` as the next step.
+- Prefer the real \`osj\` CLI output over guesses.
+- If the command fails, show the relevant error and suggest the safest next step.`,
+    license: 'MIT',
+    compatibility: 'Requires the osj CLI in the current project.',
+    metadata: { author: 'openspec', version: '1.0' },
+  };
+}
+
+export function getOsjArchiveRetrySkillTemplate(): SkillTemplate {
+  return {
+    name: 'openspec-osj-archive-retry',
+    description: 'Retry a pending Jira worklog sync with `osj archive --retry` and summarize the recovery result.',
+    instructions: `Help the user recover a session that is stuck in \`sync_pending\`.
+
+**Input**
+
+Text supplied with \`/osj-archive-retry\` should be treated as extra CLI arguments. If the user does not provide a \`--comment\`, do not add one automatically.
+
+**Steps**
+
+1. Run:
+   - default: \`osj archive --retry\`
+   - if extra arguments were provided, append them exactly as written
+2. If the command fails with a network, auth, DNS, or \`fetch failed\` style error while talking to Jira, retry once with escalated permissions when the environment supports approvals.
+3. Summarize the result for the user.
+
+**Response format**
+
+Respond with compact Markdown sections in this order:
+
+**Status**
+- One line stating whether the retry succeeded, is still pending, or failed.
+
+**Command**
+- Show the exact \`osj\` CLI command that was run.
+
+**Key facts**
+- Short bullets with the most important exact values from the CLI output.
+
+**Conclusion**
+- One or two bullets explaining what the current recovery state means for the user.
+
+**State conflicts**
+- List conflicting, stale, or blocking state combinations the user should notice.
+- If none exist, write \`- None.\`
+
+**Next step**
+- Give the safest next command.
+- If recovery still fails, prefer \`osj timer cancel\` only when the CLI indicates discard is the remaining safe path.
+
+**Evidence**
+- Include only when the CLI points to relevant runtime state, worklog ids, or sync error details worth surfacing.
+
+**Style rules**
+
+- Do not narrate execution with phrases like "I ran", "The CLI reported", or "using the skill".
+- Do not mention the helper, prompt, or skill implementation details.
+- Prefer bullets over paragraphs.
+- Prefer exact CLI values over guesses.
+- Keep the answer scan-friendly and operational.
+
+**Guardrails**
+
+- This helper is only for retrying a pending Jira sync.
+- Do not use it as a general archive command.
 - Prefer the real \`osj\` CLI output over guesses.
 - If the command fails, show the relevant error and suggest the safest next step.`,
     license: 'MIT',

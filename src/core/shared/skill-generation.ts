@@ -28,6 +28,7 @@ import {
   getOpsxOnboardCommandTemplate,
   getOpsxProposeCommandTemplate,
   getOsjApprovalShowSkillTemplate,
+  getOsjArchiveRetrySkillTemplate,
   getOsjArchiveSessionSkillTemplate,
   getOsjTicketsSkillTemplate,
   getOsjPurposeStartSkillTemplate,
@@ -35,6 +36,7 @@ import {
   getOsjRuntimeStatusSkillTemplate,
   getOsjTimerReportSkillTemplate,
   getOsjApprovalShowCommandTemplate,
+  getOsjArchiveRetryCommandTemplate,
   getOsjArchiveSessionCommandTemplate,
   getOsjTicketsCommandTemplate,
   getOsjPurposeStartCommandTemplate,
@@ -64,6 +66,7 @@ export interface CommandTemplateEntry {
 
 function getCodexCompanionCommandTemplates(): CommandTemplateEntry[] {
   return [
+    { template: getOsjArchiveRetryCommandTemplate(), id: 'osj-archive-retry' },
     { template: getOsjArchiveSessionCommandTemplate(), id: 'osj-archive-session' },
     { template: getOsjTicketsCommandTemplate(), id: 'osj-tickets' },
     { template: getOsjPurposeStartCommandTemplate(), id: 'osj-purpose-start' },
@@ -76,6 +79,7 @@ function getCodexCompanionCommandTemplates(): CommandTemplateEntry[] {
 
 function getCodexCompanionSkillTemplates(): SkillTemplateEntry[] {
   return [
+    { template: getOsjArchiveRetrySkillTemplate(), dirName: 'openspec-osj-archive-retry', workflowId: 'osj-archive-retry' },
     { template: getOsjArchiveSessionSkillTemplate(), dirName: 'openspec-osj-archive-session', workflowId: 'osj-archive-session' },
     { template: getOsjTicketsSkillTemplate(), dirName: 'openspec-osj-tickets', workflowId: 'osj-tickets' },
     { template: getOsjPurposeStartSkillTemplate(), dirName: 'openspec-osj-purpose-start', workflowId: 'osj-purpose-start' },

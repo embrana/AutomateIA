@@ -183,6 +183,7 @@ describe('InitCommand', () => {
       const timerReportPrompt = path.join(codexHome, 'prompts', 'osj-timer-report.md');
       const ticketsPrompt = path.join(codexHome, 'prompts', 'osj-tickets.md');
       const purposeStartPrompt = path.join(codexHome, 'prompts', 'osj-purpose-start.md');
+      const archiveRetryPrompt = path.join(codexHome, 'prompts', 'osj-archive-retry.md');
       const archiveSessionPrompt = path.join(codexHome, 'prompts', 'osj-archive-session.md');
 
       expect(await fileExists(runtimeStatusPrompt)).toBe(true);
@@ -191,15 +192,18 @@ describe('InitCommand', () => {
       expect(await fileExists(timerReportPrompt)).toBe(true);
       expect(await fileExists(ticketsPrompt)).toBe(true);
       expect(await fileExists(purposeStartPrompt)).toBe(true);
+      expect(await fileExists(archiveRetryPrompt)).toBe(true);
       expect(await fileExists(archiveSessionPrompt)).toBe(true);
 
       const runtimeStatusSkill = path.join(testDir, '.codex', 'skills', 'openspec-osj-runtime-status', 'SKILL.md');
       const runtimeExplainSkill = path.join(testDir, '.codex', 'skills', 'openspec-osj-runtime-explain', 'SKILL.md');
       const purposeStartSkill = path.join(testDir, '.codex', 'skills', 'openspec-osj-purpose-start', 'SKILL.md');
+      const archiveRetrySkill = path.join(testDir, '.codex', 'skills', 'openspec-osj-archive-retry', 'SKILL.md');
       const archiveSessionSkill = path.join(testDir, '.codex', 'skills', 'openspec-osj-archive-session', 'SKILL.md');
       expect(await fileExists(runtimeStatusSkill)).toBe(true);
       expect(await fileExists(runtimeExplainSkill)).toBe(true);
       expect(await fileExists(purposeStartSkill)).toBe(true);
+      expect(await fileExists(archiveRetrySkill)).toBe(true);
       expect(await fileExists(archiveSessionSkill)).toBe(true);
 
       const promptContent = await fs.readFile(runtimeStatusPrompt, 'utf-8');
@@ -215,6 +219,10 @@ describe('InitCommand', () => {
       const purposeSkillContent = await fs.readFile(purposeStartSkill, 'utf-8');
       expect(purposeSkillContent).toContain('run `osj tickets --json`');
       expect(purposeSkillContent).toContain('build `osj purpose --jira REB-234 --import-ticket`');
+
+      const archiveRetrySkillContent = await fs.readFile(archiveRetrySkill, 'utf-8');
+      expect(archiveRetrySkillContent).toContain('default: `osj archive --retry`');
+      expect(archiveRetrySkillContent).toContain('This helper is only for retrying a pending Jira sync.');
 
       const archiveSkillContent = await fs.readFile(archiveSessionSkill, 'utf-8');
       expect(archiveSkillContent).toContain('If the active session still references a non-archived change, do not run `osj archive`.');

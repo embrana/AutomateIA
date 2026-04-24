@@ -101,3 +101,17 @@ export function getOsjArchiveSessionCommandTemplate(): CommandTemplate {
 If the skill is not available in this project, first inspect \`osj runtime status\`. Only fall back to \`osj archive --comment "Implementation session"\` when the active session does not point at a non-archived change.`,
   };
 }
+
+export function getOsjArchiveRetryCommandTemplate(): CommandTemplate {
+  return {
+    name: 'OSJ: Archive Retry',
+    description: 'Retry a pending Jira worklog sync after an archive left the session in sync_pending',
+    category: 'OSJ Timer',
+    tags: ['osj', 'archive', 'retry', 'worklog'],
+    content: buildReadOnlyCommandContent(
+      '/osj-archive-retry',
+      'openspec-osj-archive-retry',
+      'osj archive --retry'
+    ),
+  };
+}

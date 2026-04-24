@@ -95,6 +95,7 @@ describe('skill-generation', () => {
       const dirNames = templates.map((entry) => entry.dirName);
 
       expect(dirNames).toContain('openspec-explore');
+      expect(dirNames).toContain('openspec-osj-archive-retry');
       expect(dirNames).toContain('openspec-osj-archive-session');
       expect(dirNames).toContain('openspec-osj-tickets');
       expect(dirNames).toContain('openspec-osj-purpose-start');
@@ -107,6 +108,7 @@ describe('skill-generation', () => {
     it('should expose managed skill entries for codex', () => {
       expect(getManagedSkillEntriesForTool('codex', ['explore']).map((entry) => entry.dirName)).toEqual([
         'openspec-explore',
+        'openspec-osj-archive-retry',
         'openspec-osj-archive-session',
         'openspec-osj-tickets',
         'openspec-osj-purpose-start',
@@ -157,6 +159,25 @@ describe('skill-generation', () => {
       expect(archiveSessionSkill?.template.instructions).toContain('Inspect the current runtime first with `osj runtime status`');
       expect(archiveSessionSkill?.template.instructions).toContain('If the active session still references a non-archived change, do not run `osj archive`.');
       expect(archiveSessionSkill?.template.instructions).toContain('Never use it to archive an active change.');
+      expect(archiveSessionSkill?.template.instructions).toContain('If the first archive attempt leaves the session in `sync_pending`, prefer `osj archive --retry` as the next step.');
+    });
+
+    it('should make the Codex /osj-archive-retry skill focus on sync_pending recovery', () => {
+      const archiveRetrySkill = getSkillTemplatesForTool('codex', ['explore'])
+        .find((entry) => entry.dirName === 'openspec-osj-archive-retry');
+
+      expect(archiveRetrySkill?.template.instructions).toContain('default: `osj archive --retry`');
+      expect(archiveRetrySkill?.template.instructions).toContain('This helper is only for retrying a pending Jira sync.');
+      expect(archiveRetrySkill?.template.instructions).toContain('prefer `osj timer cancel` only when the CLI indicates discard is the remaining safe path.');
+    });
+
+    it('should make read-only /osj helpers execute only their own exact command', () => {
+      const timerReportSkill = getSkillTemplatesForTool('codex', ['explore'])
+        .find((entry) => entry.dirName === 'openspec-osj-timer-report');
+
+      expect(timerReportSkill?.template.instructions).toContain('Run only the exact CLI command defined for this helper.');
+      expect(timerReportSkill?.template.instructions).toContain("Do not execute any other `osj` command or any other `/osj-*` helper on the user's behalf.");
+      expect(timerReportSkill?.template.instructions).toContain('If another command would help, mention it only in **Next step**.');
     });
   });
 
@@ -262,6 +283,7 @@ describe('skill-generation', () => {
 
       expect(ids).toContain('explore');
       expect(ids).toContain('apply');
+      expect(ids).toContain('osj-archive-retry');
       expect(ids).toContain('osj-archive-session');
       expect(ids).toContain('osj-tickets');
       expect(ids).toContain('osj-purpose-start');
@@ -283,6 +305,7 @@ describe('skill-generation', () => {
     it('should expose managed command ids for codex', () => {
       expect(getManagedCommandIdsForTool('codex', ['explore'])).toEqual([
         'explore',
+        'osj-archive-retry',
         'osj-archive-session',
         'osj-tickets',
         'osj-purpose-start',
@@ -320,6 +343,16 @@ describe('skill-generation', () => {
       expect(archiveSession?.body).toContain('osj archive --comment "Implementation session"');
       expect(archiveSession?.body).not.toContain('**Steps**');
       expect(archiveSession?.body).not.toContain('**Guardrails**');
+    });
+
+    it('should keep the Codex /osj-archive-retry prompt minimal and skill-backed', () => {
+      const archiveRetry = getCommandContentsForTool('codex', ['explore'])
+        .find((content) => content.id === 'osj-archive-retry');
+
+      expect(archiveRetry?.body).toContain('openspec-osj-archive-retry');
+      expect(archiveRetry?.body).toContain('osj archive --retry');
+      expect(archiveRetry?.body).not.toContain('**Steps**');
+      expect(archiveRetry?.body).not.toContain('**Guardrails**');
     });
   });
 
