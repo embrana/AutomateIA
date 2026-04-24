@@ -228,3 +228,75 @@ Respond with compact Markdown sections in this order:
     metadata: { author: 'openspec', version: '1.0' },
   };
 }
+
+export function getOsjArchiveSessionSkillTemplate(): SkillTemplate {
+  return {
+    name: 'openspec-osj-archive-session',
+    description: 'Safely close only the active timer session and Jira worklog without archiving an OpenSpec change.',
+    instructions: `Help the user close only the active timer session and Jira worklog.
+
+**Input**
+
+Text supplied with \`/osj-archive-session\` should be treated as extra CLI arguments. If no explicit \`--comment\` is provided, use the default comment \`Implementation session\`.
+
+**Steps**
+
+1. Inspect the current runtime first with \`osj runtime status\`.
+2. If there is no active session, stop and explain that there is nothing to archive.
+3. If the active session still references a non-archived change, do not run \`osj archive\`.
+   - Explain that this helper is session-only and would be unsafe because the current session still points at a change.
+   - Suggest the safer next command, such as the full terminal archive flow.
+4. If the session does not point at an active change, run:
+   - default: \`osj archive --comment "Implementation session"\`
+   - if the user provided extra arguments, append them exactly as written
+   - if the user did not provide \`--comment\`, keep the default comment
+5. If the command fails with a network, auth, DNS, or \`fetch failed\` style error while talking to Jira, retry once with escalated permissions when the environment supports approvals.
+6. Summarize the result for the user.
+
+**Response format**
+
+Respond with compact Markdown sections in this order:
+
+**Status**
+- One line stating whether the session archive ran, was skipped for safety, or found no active session.
+
+**Command**
+- Show the exact \`osj\` CLI command that was run.
+- If no command was run, write \`- Not run.\`
+
+**Key facts**
+- Short bullets with the most important exact values from the CLI output.
+
+**Conclusion**
+- One or two bullets explaining what the current state means for the user.
+
+**State conflicts**
+- List conflicting, stale, or blocking state combinations the user should notice.
+- If none exist, write \`- None.\`
+
+**Next step**
+- Give the safest next command.
+
+**Evidence**
+- Include only when the CLI points to relevant artifact paths, runtime state, or worklog information worth surfacing.
+
+**Style rules**
+
+- Do not narrate execution with phrases like "I ran", "The CLI reported", or "using the skill".
+- Do not mention the helper, prompt, or skill implementation details.
+- Prefer bullets over paragraphs.
+- Prefer exact CLI values over guesses.
+- Keep the answer scan-friendly and operational.
+
+**Guardrails**
+
+- This helper is only for session/worklog closeout.
+- Never use it to archive an active change.
+- If the runtime still points at an active change, stop and tell the user instead of running \`osj archive\`.
+- Prefer the real \`osj\` CLI output over guesses.
+- If the command fails, show the relevant error and suggest the safest next step.`,
+    license: 'MIT',
+    compatibility: 'Requires the osj CLI in the current project.',
+    metadata: { author: 'openspec', version: '1.0' },
+  };
+}

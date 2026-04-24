@@ -95,6 +95,7 @@ describe('skill-generation', () => {
       const dirNames = templates.map((entry) => entry.dirName);
 
       expect(dirNames).toContain('openspec-explore');
+      expect(dirNames).toContain('openspec-osj-archive-session');
       expect(dirNames).toContain('openspec-osj-tickets');
       expect(dirNames).toContain('openspec-osj-purpose-start');
       expect(dirNames).toContain('openspec-osj-runtime-status');
@@ -106,6 +107,7 @@ describe('skill-generation', () => {
     it('should expose managed skill entries for codex', () => {
       expect(getManagedSkillEntriesForTool('codex', ['explore']).map((entry) => entry.dirName)).toEqual([
         'openspec-explore',
+        'openspec-osj-archive-session',
         'openspec-osj-tickets',
         'openspec-osj-purpose-start',
         'openspec-osj-runtime-status',
@@ -146,6 +148,15 @@ describe('skill-generation', () => {
 
       expect(ticketsSkill?.template.instructions).toContain('`fetch failed` style error');
       expect(ticketsSkill?.template.instructions).toContain('retry once with escalated permissions');
+    });
+
+    it('should make the Codex /osj-archive-session skill stop when an active change is still attached', () => {
+      const archiveSessionSkill = getSkillTemplatesForTool('codex', ['explore'])
+        .find((entry) => entry.dirName === 'openspec-osj-archive-session');
+
+      expect(archiveSessionSkill?.template.instructions).toContain('Inspect the current runtime first with `osj runtime status`');
+      expect(archiveSessionSkill?.template.instructions).toContain('If the active session still references a non-archived change, do not run `osj archive`.');
+      expect(archiveSessionSkill?.template.instructions).toContain('Never use it to archive an active change.');
     });
   });
 
@@ -251,6 +262,7 @@ describe('skill-generation', () => {
 
       expect(ids).toContain('explore');
       expect(ids).toContain('apply');
+      expect(ids).toContain('osj-archive-session');
       expect(ids).toContain('osj-tickets');
       expect(ids).toContain('osj-purpose-start');
       expect(ids).toContain('osj-runtime-status');
@@ -271,6 +283,7 @@ describe('skill-generation', () => {
     it('should expose managed command ids for codex', () => {
       expect(getManagedCommandIdsForTool('codex', ['explore'])).toEqual([
         'explore',
+        'osj-archive-session',
         'osj-tickets',
         'osj-purpose-start',
         'osj-runtime-status',
@@ -297,6 +310,16 @@ describe('skill-generation', () => {
       expect(purposeStart?.body).toContain('osj tickets --json');
       expect(purposeStart?.body).not.toContain('**Steps**');
       expect(purposeStart?.body).not.toContain('**Guardrails**');
+    });
+
+    it('should keep the Codex /osj-archive-session prompt minimal and skill-backed', () => {
+      const archiveSession = getCommandContentsForTool('codex', ['explore'])
+        .find((content) => content.id === 'osj-archive-session');
+
+      expect(archiveSession?.body).toContain('openspec-osj-archive-session');
+      expect(archiveSession?.body).toContain('osj archive --comment "Implementation session"');
+      expect(archiveSession?.body).not.toContain('**Steps**');
+      expect(archiveSession?.body).not.toContain('**Guardrails**');
     });
   });
 

@@ -183,6 +183,7 @@ describe('InitCommand', () => {
       const timerReportPrompt = path.join(codexHome, 'prompts', 'osj-timer-report.md');
       const ticketsPrompt = path.join(codexHome, 'prompts', 'osj-tickets.md');
       const purposeStartPrompt = path.join(codexHome, 'prompts', 'osj-purpose-start.md');
+      const archiveSessionPrompt = path.join(codexHome, 'prompts', 'osj-archive-session.md');
 
       expect(await fileExists(runtimeStatusPrompt)).toBe(true);
       expect(await fileExists(runtimeExplainPrompt)).toBe(true);
@@ -190,13 +191,16 @@ describe('InitCommand', () => {
       expect(await fileExists(timerReportPrompt)).toBe(true);
       expect(await fileExists(ticketsPrompt)).toBe(true);
       expect(await fileExists(purposeStartPrompt)).toBe(true);
+      expect(await fileExists(archiveSessionPrompt)).toBe(true);
 
       const runtimeStatusSkill = path.join(testDir, '.codex', 'skills', 'openspec-osj-runtime-status', 'SKILL.md');
       const runtimeExplainSkill = path.join(testDir, '.codex', 'skills', 'openspec-osj-runtime-explain', 'SKILL.md');
       const purposeStartSkill = path.join(testDir, '.codex', 'skills', 'openspec-osj-purpose-start', 'SKILL.md');
+      const archiveSessionSkill = path.join(testDir, '.codex', 'skills', 'openspec-osj-archive-session', 'SKILL.md');
       expect(await fileExists(runtimeStatusSkill)).toBe(true);
       expect(await fileExists(runtimeExplainSkill)).toBe(true);
       expect(await fileExists(purposeStartSkill)).toBe(true);
+      expect(await fileExists(archiveSessionSkill)).toBe(true);
 
       const promptContent = await fs.readFile(runtimeStatusPrompt, 'utf-8');
       expect(promptContent).toContain('openspec-osj-runtime-status');
@@ -211,6 +215,10 @@ describe('InitCommand', () => {
       const purposeSkillContent = await fs.readFile(purposeStartSkill, 'utf-8');
       expect(purposeSkillContent).toContain('run `osj tickets --json`');
       expect(purposeSkillContent).toContain('build `osj purpose --jira REB-234 --import-ticket`');
+
+      const archiveSkillContent = await fs.readFile(archiveSessionSkill, 'utf-8');
+      expect(archiveSkillContent).toContain('If the active session still references a non-archived change, do not run `osj archive`.');
+      expect(archiveSkillContent).toContain('This helper is only for session/worklog closeout.');
     });
 
     it('should create skills for multiple tools at once', async () => {

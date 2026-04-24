@@ -20,6 +20,7 @@ export { getOpsxProposeSkillTemplate, getOpsxProposeCommandTemplate } from './wo
 export { getFeedbackSkillTemplate } from './workflows/feedback.js';
 export {
   getOsjApprovalShowSkillTemplate,
+  getOsjArchiveSessionSkillTemplate,
   getOsjTicketsSkillTemplate,
   getOsjPurposeStartSkillTemplate,
   getOsjRuntimeExplainSkillTemplate,
@@ -28,6 +29,7 @@ export {
 } from './osj-skills.js';
 export {
   getOsjApprovalShowCommandTemplate,
+  getOsjArchiveSessionCommandTemplate,
   getOsjTicketsCommandTemplate,
   getOsjPurposeStartCommandTemplate,
   getOsjRuntimeExplainCommandTemplate,

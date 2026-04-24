@@ -89,3 +89,15 @@ If the skill is not available in this project, fall back to:
 - \`osj purpose --jira <KEY> --import-ticket\` when a Jira issue key or explicit \`--jira\` argument was provided`,
   };
 }
+
+export function getOsjArchiveSessionCommandTemplate(): CommandTemplate {
+  return {
+    name: 'OSJ: Archive Session',
+    description: 'Safely close only the active timer session and Jira worklog when no active change archive should run',
+    category: 'OSJ Timer',
+    tags: ['osj', 'archive', 'timer', 'worklog'],
+    content: `Use the \`openspec-osj-archive-session\` skill to safely close only the active timer session and Jira worklog.
+
+If the skill is not available in this project, first inspect \`osj runtime status\`. Only fall back to \`osj archive --comment "Implementation session"\` when the active session does not point at a non-archived change.`,
+  };
+}
