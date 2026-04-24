@@ -27,6 +27,10 @@ import {
   getOpsxVerifyCommandTemplate,
   getOpsxOnboardCommandTemplate,
   getOpsxProposeCommandTemplate,
+  getOsjApprovalShowCommandTemplate,
+  getOsjRuntimeExplainCommandTemplate,
+  getOsjRuntimeStatusCommandTemplate,
+  getOsjTimerReportCommandTemplate,
   type SkillTemplate,
 } from '../templates/skill-templates.js';
 import type { CommandContent } from '../command-generation/index.js';
@@ -46,6 +50,15 @@ export interface SkillTemplateEntry {
 export interface CommandTemplateEntry {
   template: ReturnType<typeof getOpsxExploreCommandTemplate>;
   id: string;
+}
+
+function getCodexCompanionCommandTemplates(): CommandTemplateEntry[] {
+  return [
+    { template: getOsjRuntimeStatusCommandTemplate(), id: 'osj-runtime-status' },
+    { template: getOsjRuntimeExplainCommandTemplate(), id: 'osj-runtime-explain' },
+    { template: getOsjApprovalShowCommandTemplate(), id: 'osj-approval-show' },
+    { template: getOsjTimerReportCommandTemplate(), id: 'osj-timer-report' },
+  ];
 }
 
 /**
@@ -115,6 +128,36 @@ export function getCommandContents(workflowFilter?: readonly string[]): CommandC
     tags: template.tags,
     body: template.content,
   }));
+}
+
+/**
+ * Returns command contents for a specific tool.
+ * Codex gets the normal workflow-backed `/opsx-*` commands plus a small set
+ * of read-only `/osj-*` companion commands.
+ */
+export function getCommandContentsForTool(toolId: string, workflowFilter?: readonly string[]): CommandContent[] {
+  const baseContents = getCommandContents(workflowFilter);
+  if (toolId !== 'codex') {
+    return baseContents;
+  }
+
+  const companionContents = getCodexCompanionCommandTemplates().map(({ template, id }) => ({
+    id,
+    name: template.name,
+    description: template.description,
+    category: template.category,
+    tags: template.tags,
+    body: template.content,
+  }));
+
+  return [...baseContents, ...companionContents];
+}
+
+/**
+ * Returns the managed command ids for a tool.
+ */
+export function getManagedCommandIdsForTool(toolId: string, workflowFilter?: readonly string[]): string[] {
+  return getCommandContentsForTool(toolId, workflowFilter).map((content) => content.id);
 }
 
 /**

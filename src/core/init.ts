@@ -37,7 +37,8 @@ import {
   getToolSkillStatus,
   getToolStates,
   getSkillTemplates,
-  getCommandContents,
+  getCommandContentsForTool,
+  getManagedCommandIdsForTool,
   generateSkillContent,
   type ToolSkillStatus,
 } from './shared/index.js';
@@ -519,8 +520,6 @@ export class InitCommand {
     const shouldGenerateSkills = delivery !== 'commands';
     const shouldGenerateCommands = delivery !== 'skills';
     const skillTemplates = shouldGenerateSkills ? getSkillTemplates(workflows) : [];
-    const commandContents = shouldGenerateCommands ? getCommandContents(workflows) : [];
-
     // Process each tool
     for (const tool of tools) {
       const spinner = ora(`Setting up ${tool.name}...`).start();
@@ -554,6 +553,7 @@ export class InitCommand {
         if (shouldGenerateCommands) {
           const adapter = CommandAdapterRegistry.get(tool.value);
           if (adapter) {
+            const commandContents = getCommandContentsForTool(tool.value, workflows);
             const generatedCommands = generateCommands(commandContents, adapter);
 
             for (const cmd of generatedCommands) {
@@ -657,7 +657,9 @@ export class InitCommand {
       const workflows = getProfileWorkflows(profile, globalConfig.workflows);
       const toolDirs = [...new Set(successfulTools.map((t) => t.skillsDir))].join(', ');
       const skillCount = delivery !== 'commands' ? getSkillTemplates(workflows).length : 0;
-      const commandCount = delivery !== 'skills' ? getCommandContents(workflows).length : 0;
+      const commandCount = delivery !== 'skills'
+        ? Math.max(...successfulTools.map((tool) => getManagedCommandIdsForTool(tool.value, workflows).length))
+        : 0;
       if (skillCount > 0 && commandCount > 0) {
         console.log(`${skillCount} skills and ${commandCount} commands in ${toolDirs}/`);
       } else if (skillCount > 0) {
@@ -760,8 +762,8 @@ export class InitCommand {
     const adapter = CommandAdapterRegistry.get(toolId);
     if (!adapter) return 0;
 
-    for (const workflow of ALL_WORKFLOWS) {
-      const cmdPath = adapter.getFilePath(workflow);
+    for (const commandId of getManagedCommandIdsForTool(toolId, ALL_WORKFLOWS)) {
+      const cmdPath = adapter.getFilePath(commandId);
       const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
 
       try {

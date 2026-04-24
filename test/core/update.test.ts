@@ -251,6 +251,37 @@ Old instructions content
       }
     });
 
+    it('should generate /osj companion prompts for configured Codex projects', async () => {
+      const originalCodexHome = process.env.CODEX_HOME;
+      const codexHome = path.join(testDir, '.codex-home');
+      await fs.mkdir(path.join(codexHome, 'prompts'), { recursive: true });
+      process.env.CODEX_HOME = codexHome;
+
+      try {
+        const skillsDir = path.join(testDir, '.codex', 'skills');
+        await fs.mkdir(path.join(skillsDir, 'openspec-explore'), {
+          recursive: true,
+        });
+        await fs.writeFile(
+          path.join(skillsDir, 'openspec-explore', 'SKILL.md'),
+          'old content'
+        );
+
+        await updateCommand.execute(testDir);
+
+        expect(await FileSystemUtils.fileExists(path.join(codexHome, 'prompts', 'osj-runtime-status.md'))).toBe(true);
+        expect(await FileSystemUtils.fileExists(path.join(codexHome, 'prompts', 'osj-runtime-explain.md'))).toBe(true);
+        expect(await FileSystemUtils.fileExists(path.join(codexHome, 'prompts', 'osj-approval-show.md'))).toBe(true);
+        expect(await FileSystemUtils.fileExists(path.join(codexHome, 'prompts', 'osj-timer-report.md'))).toBe(true);
+      } finally {
+        if (originalCodexHome === undefined) {
+          delete process.env.CODEX_HOME;
+        } else {
+          process.env.CODEX_HOME = originalCodexHome;
+        }
+      }
+    });
+
   });
 
   describe('multi-tool support', () => {

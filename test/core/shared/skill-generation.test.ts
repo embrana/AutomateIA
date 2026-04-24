@@ -3,6 +3,8 @@ import {
   getSkillTemplates,
   getCommandTemplates,
   getCommandContents,
+  getCommandContentsForTool,
+  getManagedCommandIdsForTool,
   generateSkillContent,
 } from '../../../src/core/shared/skill-generation.js';
 
@@ -181,6 +183,37 @@ describe('skill-generation', () => {
       const all = getCommandContents();
       const noFilter = getCommandContents(undefined);
       expect(noFilter).toHaveLength(all.length);
+    });
+
+    it('should add Codex-only /osj companion commands for the codex tool', () => {
+      const contents = getCommandContentsForTool('codex', ['explore', 'apply']);
+      const ids = contents.map((content) => content.id);
+
+      expect(ids).toContain('explore');
+      expect(ids).toContain('apply');
+      expect(ids).toContain('osj-runtime-status');
+      expect(ids).toContain('osj-runtime-explain');
+      expect(ids).toContain('osj-approval-show');
+      expect(ids).toContain('osj-timer-report');
+    });
+
+    it('should not add /osj companion commands for non-codex tools', () => {
+      const contents = getCommandContentsForTool('claude', ['explore', 'apply']);
+      const ids = contents.map((content) => content.id);
+
+      expect(ids).toContain('explore');
+      expect(ids).toContain('apply');
+      expect(ids.some((id) => id.startsWith('osj-'))).toBe(false);
+    });
+
+    it('should expose managed command ids for codex', () => {
+      expect(getManagedCommandIdsForTool('codex', ['explore'])).toEqual([
+        'explore',
+        'osj-runtime-status',
+        'osj-runtime-explain',
+        'osj-approval-show',
+        'osj-timer-report',
+      ]);
     });
   });
 

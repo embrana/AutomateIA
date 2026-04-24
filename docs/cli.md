@@ -130,6 +130,17 @@ openspec/
 ... (other tool configs)
 ```
 
+For Codex specifically, `osj init` / `osj update` now install:
+
+- the normal `opsx-*` workflow prompts
+- a first batch of read-only `osj-*` companion prompts:
+  - `/osj-runtime-status`
+  - `/osj-runtime-explain`
+  - `/osj-approval-show`
+  - `/osj-timer-report`
+
+The more state-changing `osj` helpers still remain terminal-first for now.
+
 ---
 
 ### `openspec update`

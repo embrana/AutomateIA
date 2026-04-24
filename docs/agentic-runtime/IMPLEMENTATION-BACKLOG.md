@@ -57,6 +57,14 @@ This backlog turns the architecture into a phased implementation plan for Codex.
   - per-profile policy levels such as `strict`, `standard`, and `large_feature`
   - explicit CLI override for a single run, with the chosen budget persisted in runtime artifacts for traceability
 - `osj runtime explain` and approval artifacts should surface the active policy profile or configured budget so developers understand why a feature was gated.
+- Codex should eventually expose the more sensitive `osj` flows directly in the IDE, but they should land after the new read-only companion commands:
+  - `/osj-purpose-pick`
+  - `/osj-timer-switch`
+  - `/osj-orchestrate-*`
+  - `/osj-approval-accept`
+  - `/osj-approval-reject`
+  - `/osj-archive`
+- Those `/osj-*` wrappers should keep `osj` as the real backend so timer, worklog, approval, and archive logic stays centralized in the CLI instead of being reimplemented in prompt text.
 
 ## Status Snapshot
 

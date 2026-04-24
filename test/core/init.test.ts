@@ -168,6 +168,26 @@ describe('InitCommand', () => {
       expect(await fileExists(skillFile)).toBe(true);
     });
 
+    it('should create /osj companion prompts for Codex when commands are enabled', async () => {
+      const codexHome = path.join(testDir, '.codex-home');
+      await fs.mkdir(path.join(codexHome, 'prompts'), { recursive: true });
+      process.env.CODEX_HOME = codexHome;
+
+      const initCommand = new InitCommand({ tools: 'codex', force: true });
+
+      await initCommand.execute(testDir);
+
+      const runtimeStatusPrompt = path.join(codexHome, 'prompts', 'osj-runtime-status.md');
+      const runtimeExplainPrompt = path.join(codexHome, 'prompts', 'osj-runtime-explain.md');
+      const approvalShowPrompt = path.join(codexHome, 'prompts', 'osj-approval-show.md');
+      const timerReportPrompt = path.join(codexHome, 'prompts', 'osj-timer-report.md');
+
+      expect(await fileExists(runtimeStatusPrompt)).toBe(true);
+      expect(await fileExists(runtimeExplainPrompt)).toBe(true);
+      expect(await fileExists(approvalShowPrompt)).toBe(true);
+      expect(await fileExists(timerReportPrompt)).toBe(true);
+    });
+
     it('should create skills for multiple tools at once', async () => {
       const initCommand = new InitCommand({ tools: 'claude,cursor', force: true });
 

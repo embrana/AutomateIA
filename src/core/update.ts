@@ -20,7 +20,8 @@ import {
 import {
   getToolVersionStatus,
   getSkillTemplates,
-  getCommandContents,
+  getCommandContentsForTool,
+  getManagedCommandIdsForTool,
   generateSkillContent,
   getToolsWithSkillsDir,
   type ToolVersionStatus,
@@ -168,8 +169,6 @@ export class UpdateCommand {
 
     // 9. Determine what to generate based on delivery
     const skillTemplates = shouldGenerateSkills ? getSkillTemplates(desiredWorkflows) : [];
-    const commandContents = shouldGenerateCommands ? getCommandContents(desiredWorkflows) : [];
-
     // 10. Update tools (all if force, otherwise only those needing update)
     const toolsToUpdate = this.force ? configuredTools : [...toolsToUpdateSet];
     const updatedTools: string[] = [];
@@ -212,6 +211,7 @@ export class UpdateCommand {
         if (shouldGenerateCommands) {
           const adapter = CommandAdapterRegistry.get(tool.value);
           if (adapter) {
+            const commandContents = getCommandContentsForTool(tool.value, desiredWorkflows);
             const generatedCommands = generateCommands(commandContents, adapter);
 
             for (const cmd of generatedCommands) {
@@ -437,8 +437,8 @@ export class UpdateCommand {
     const adapter = CommandAdapterRegistry.get(toolId);
     if (!adapter) return 0;
 
-    for (const workflow of ALL_WORKFLOWS) {
-      const cmdPath = adapter.getFilePath(workflow);
+    for (const commandId of getManagedCommandIdsForTool(toolId, ALL_WORKFLOWS)) {
+      const cmdPath = adapter.getFilePath(commandId);
       const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
 
       try {
@@ -468,11 +468,11 @@ export class UpdateCommand {
     const adapter = CommandAdapterRegistry.get(toolId);
     if (!adapter) return 0;
 
-    const desiredSet = new Set(desiredWorkflows);
+    const desiredSet = new Set(getManagedCommandIdsForTool(toolId, desiredWorkflows));
 
-    for (const workflow of ALL_WORKFLOWS) {
-      if (desiredSet.has(workflow)) continue;
-      const cmdPath = adapter.getFilePath(workflow);
+    for (const commandId of getManagedCommandIdsForTool(toolId, ALL_WORKFLOWS)) {
+      if (desiredSet.has(commandId)) continue;
+      const cmdPath = adapter.getFilePath(commandId);
       const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
 
       try {
@@ -648,7 +648,6 @@ export class UpdateCommand {
     const shouldGenerateSkills = delivery !== 'commands';
     const shouldGenerateCommands = delivery !== 'skills';
     const skillTemplates = shouldGenerateSkills ? getSkillTemplates(desiredWorkflows) : [];
-    const commandContents = shouldGenerateCommands ? getCommandContents(desiredWorkflows) : [];
 
     for (const toolId of selectedTools) {
       const tool = AI_TOOLS.find((t) => t.value === toolId);
@@ -676,6 +675,7 @@ export class UpdateCommand {
         if (shouldGenerateCommands) {
           const adapter = CommandAdapterRegistry.get(tool.value);
           if (adapter) {
+            const commandContents = getCommandContentsForTool(tool.value, desiredWorkflows);
             const generatedCommands = generateCommands(commandContents, adapter);
 
             for (const cmd of generatedCommands) {
