@@ -24,9 +24,11 @@ export {
   type SkillTemplateEntry,
   type CommandTemplateEntry,
   getSkillTemplates,
+  getSkillTemplatesForTool,
   getCommandTemplates,
   getCommandContents,
   getCommandContentsForTool,
+  getManagedSkillEntriesForTool,
   getManagedCommandIdsForTool,
   generateSkillContent,
 } from './skill-generation.js';

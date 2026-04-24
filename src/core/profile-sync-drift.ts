@@ -4,7 +4,7 @@ import { AI_TOOLS } from './config.js';
 import type { Delivery } from './global-config.js';
 import { ALL_WORKFLOWS } from './profiles.js';
 import { CommandAdapterRegistry } from './command-generation/index.js';
-import { getConfiguredTools, getManagedCommandIdsForTool } from './shared/index.js';
+import { getConfiguredTools, getManagedCommandIdsForTool, getManagedSkillEntriesForTool } from './shared/index.js';
 
 type WorkflowId = (typeof ALL_WORKFLOWS)[number];
 
@@ -102,8 +102,14 @@ export function hasToolProfileOrDeliveryDrift(
   const shouldGenerateCommands = delivery !== 'skills';
 
   if (shouldGenerateSkills) {
-    for (const workflow of knownDesiredWorkflows) {
-      const dirName = WORKFLOW_TO_SKILL_DIR[workflow];
+    const desiredSkillEntries = getManagedSkillEntriesForTool(toolId, knownDesiredWorkflows);
+    const desiredSkillDirSet = new Set(desiredSkillEntries.map((entry) => entry.dirName));
+    const allManagedSkillDirNames = new Set([
+      ...Object.values(WORKFLOW_TO_SKILL_DIR),
+      ...getManagedSkillEntriesForTool(toolId, ALL_WORKFLOWS).map((entry) => entry.dirName),
+    ]);
+
+    for (const dirName of desiredSkillDirSet) {
       const skillFile = path.join(skillsDir, dirName, 'SKILL.md');
       if (!fs.existsSync(skillFile)) {
         return true;
@@ -111,9 +117,8 @@ export function hasToolProfileOrDeliveryDrift(
     }
 
     // Deselecting workflows in a profile should trigger sync.
-    for (const workflow of ALL_WORKFLOWS) {
-      if (desiredWorkflowSet.has(workflow)) continue;
-      const dirName = WORKFLOW_TO_SKILL_DIR[workflow];
+    for (const dirName of allManagedSkillDirNames) {
+      if (desiredSkillDirSet.has(dirName)) continue;
       const skillDir = path.join(skillsDir, dirName);
       if (fs.existsSync(skillDir)) {
         return true;

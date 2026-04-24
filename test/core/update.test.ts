@@ -273,6 +273,12 @@ Old instructions content
         expect(await FileSystemUtils.fileExists(path.join(codexHome, 'prompts', 'osj-runtime-explain.md'))).toBe(true);
         expect(await FileSystemUtils.fileExists(path.join(codexHome, 'prompts', 'osj-approval-show.md'))).toBe(true);
         expect(await FileSystemUtils.fileExists(path.join(codexHome, 'prompts', 'osj-timer-report.md'))).toBe(true);
+        expect(await FileSystemUtils.fileExists(path.join(testDir, '.codex', 'skills', 'openspec-osj-runtime-status', 'SKILL.md'))).toBe(true);
+        expect(await FileSystemUtils.fileExists(path.join(testDir, '.codex', 'skills', 'openspec-osj-runtime-explain', 'SKILL.md'))).toBe(true);
+
+        const promptContent = await fs.readFile(path.join(codexHome, 'prompts', 'osj-runtime-status.md'), 'utf-8');
+        expect(promptContent).toContain('openspec-osj-runtime-status');
+        expect(promptContent).not.toContain('**Steps**');
       } finally {
         if (originalCodexHome === undefined) {
           delete process.env.CODEX_HOME;

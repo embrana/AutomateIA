@@ -186,6 +186,15 @@ describe('InitCommand', () => {
       expect(await fileExists(runtimeExplainPrompt)).toBe(true);
       expect(await fileExists(approvalShowPrompt)).toBe(true);
       expect(await fileExists(timerReportPrompt)).toBe(true);
+
+      const runtimeStatusSkill = path.join(testDir, '.codex', 'skills', 'openspec-osj-runtime-status', 'SKILL.md');
+      const runtimeExplainSkill = path.join(testDir, '.codex', 'skills', 'openspec-osj-runtime-explain', 'SKILL.md');
+      expect(await fileExists(runtimeStatusSkill)).toBe(true);
+      expect(await fileExists(runtimeExplainSkill)).toBe(true);
+
+      const promptContent = await fs.readFile(runtimeStatusPrompt, 'utf-8');
+      expect(promptContent).toContain('openspec-osj-runtime-status');
+      expect(promptContent).not.toContain('**Steps**');
     });
 
     it('should create skills for multiple tools at once', async () => {

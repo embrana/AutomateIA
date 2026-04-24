@@ -19,7 +19,8 @@ import {
 } from './command-generation/index.js';
 import {
   getToolVersionStatus,
-  getSkillTemplates,
+  getSkillTemplatesForTool,
+  getManagedSkillEntriesForTool,
   getCommandContentsForTool,
   getManagedCommandIdsForTool,
   generateSkillContent,
@@ -168,7 +169,6 @@ export class UpdateCommand {
     console.log();
 
     // 9. Determine what to generate based on delivery
-    const skillTemplates = shouldGenerateSkills ? getSkillTemplates(desiredWorkflows) : [];
     // 10. Update tools (all if force, otherwise only those needing update)
     const toolsToUpdate = this.force ? configuredTools : [...toolsToUpdateSet];
     const updatedTools: string[] = [];
@@ -189,6 +189,7 @@ export class UpdateCommand {
 
         // Generate skill files if delivery includes skills
         if (shouldGenerateSkills) {
+          const skillTemplates = getSkillTemplatesForTool(tool.value, desiredWorkflows);
           for (const { template, dirName } of skillTemplates) {
             const skillDir = path.join(skillsDir, dirName);
             const skillFile = path.join(skillDir, 'SKILL.md');
@@ -198,8 +199,7 @@ export class UpdateCommand {
             const skillContent = generateSkillContent(template, OPENSPEC_VERSION, transformer);
             await FileSystemUtils.writeFile(skillFile, skillContent);
           }
-
-          removedDeselectedSkillCount += await this.removeUnselectedSkillDirs(skillsDir, desiredWorkflows);
+          removedDeselectedSkillCount += await this.removeUnselectedSkillDirs(skillsDir, desiredWorkflows, tool.value);
         }
 
         // Delete skill directories if delivery is commands-only
@@ -375,10 +375,15 @@ export class UpdateCommand {
    */
   private async removeSkillDirs(skillsDir: string): Promise<number> {
     let removed = 0;
+    const skillDirNames = new Set<string>([
+      ...Object.values(WORKFLOW_TO_SKILL_DIR),
+      'openspec-osj-runtime-status',
+      'openspec-osj-runtime-explain',
+      'openspec-osj-approval-show',
+      'openspec-osj-timer-report',
+    ]);
 
-    for (const workflow of ALL_WORKFLOWS) {
-      const dirName = WORKFLOW_TO_SKILL_DIR[workflow];
-      if (!dirName) continue;
+    for (const dirName of skillDirNames) {
 
       const skillDir = path.join(skillsDir, dirName);
       try {
@@ -400,15 +405,19 @@ export class UpdateCommand {
    */
   private async removeUnselectedSkillDirs(
     skillsDir: string,
-    desiredWorkflows: readonly (typeof ALL_WORKFLOWS)[number][]
+    desiredWorkflows: readonly (typeof ALL_WORKFLOWS)[number][],
+    toolId?: string,
   ): Promise<number> {
-    const desiredSet = new Set(desiredWorkflows);
+    const desiredSet = new Set(
+      (toolId ? getManagedSkillEntriesForTool(toolId, desiredWorkflows) : [])
+        .map((entry) => entry.dirName)
+    );
     let removed = 0;
 
     for (const workflow of ALL_WORKFLOWS) {
-      if (desiredSet.has(workflow)) continue;
       const dirName = WORKFLOW_TO_SKILL_DIR[workflow];
       if (!dirName) continue;
+      if (desiredSet.has(dirName)) continue;
 
       const skillDir = path.join(skillsDir, dirName);
       try {
@@ -647,7 +656,6 @@ export class UpdateCommand {
     const newlyConfigured: string[] = [];
     const shouldGenerateSkills = delivery !== 'commands';
     const shouldGenerateCommands = delivery !== 'skills';
-    const skillTemplates = shouldGenerateSkills ? getSkillTemplates(desiredWorkflows) : [];
 
     for (const toolId of selectedTools) {
       const tool = AI_TOOLS.find((t) => t.value === toolId);
@@ -660,6 +668,7 @@ export class UpdateCommand {
 
         // Create skill files when delivery includes skills
         if (shouldGenerateSkills) {
+          const skillTemplates = getSkillTemplatesForTool(tool.value, desiredWorkflows);
           for (const { template, dirName } of skillTemplates) {
             const skillDir = path.join(skillsDir, dirName);
             const skillFile = path.join(skillDir, 'SKILL.md');

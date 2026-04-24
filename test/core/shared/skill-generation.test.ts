@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
   getSkillTemplates,
+  getSkillTemplatesForTool,
   getCommandTemplates,
   getCommandContents,
   getCommandContentsForTool,
+  getManagedSkillEntriesForTool,
   getManagedCommandIdsForTool,
   generateSkillContent,
 } from '../../../src/core/shared/skill-generation.js';
@@ -86,6 +88,27 @@ describe('skill-generation', () => {
       expect(filtered).toHaveLength(1);
       expect(filtered[0].workflowId).toBe('propose');
       expect(filtered[0].dirName).toBe('openspec-propose');
+    });
+
+    it('should add Codex-only /osj companion skills for the codex tool', () => {
+      const templates = getSkillTemplatesForTool('codex', ['explore']);
+      const dirNames = templates.map((entry) => entry.dirName);
+
+      expect(dirNames).toContain('openspec-explore');
+      expect(dirNames).toContain('openspec-osj-runtime-status');
+      expect(dirNames).toContain('openspec-osj-runtime-explain');
+      expect(dirNames).toContain('openspec-osj-approval-show');
+      expect(dirNames).toContain('openspec-osj-timer-report');
+    });
+
+    it('should expose managed skill entries for codex', () => {
+      expect(getManagedSkillEntriesForTool('codex', ['explore']).map((entry) => entry.dirName)).toEqual([
+        'openspec-explore',
+        'openspec-osj-runtime-status',
+        'openspec-osj-runtime-explain',
+        'openspec-osj-approval-show',
+        'openspec-osj-timer-report',
+      ]);
     });
   });
 
@@ -214,6 +237,15 @@ describe('skill-generation', () => {
         'osj-approval-show',
         'osj-timer-report',
       ]);
+    });
+
+    it('should keep Codex /osj prompts minimal and skill-backed', () => {
+      const runtimeStatus = getCommandContentsForTool('codex', ['explore'])
+        .find((content) => content.id === 'osj-runtime-status');
+
+      expect(runtimeStatus?.body).toContain('openspec-osj-runtime-status');
+      expect(runtimeStatus?.body).not.toContain('**Steps**');
+      expect(runtimeStatus?.body).not.toContain('**Guardrails**');
     });
   });
 

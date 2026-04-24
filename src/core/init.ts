@@ -36,7 +36,8 @@ import {
   getToolsWithSkillsDir,
   getToolSkillStatus,
   getToolStates,
-  getSkillTemplates,
+  getSkillTemplatesForTool,
+  getManagedSkillEntriesForTool,
   getCommandContentsForTool,
   getManagedCommandIdsForTool,
   generateSkillContent,
@@ -519,7 +520,6 @@ export class InitCommand {
     // Get skill and command templates filtered by profile workflows
     const shouldGenerateSkills = delivery !== 'commands';
     const shouldGenerateCommands = delivery !== 'skills';
-    const skillTemplates = shouldGenerateSkills ? getSkillTemplates(workflows) : [];
     // Process each tool
     for (const tool of tools) {
       const spinner = ora(`Setting up ${tool.name}...`).start();
@@ -529,9 +529,10 @@ export class InitCommand {
         if (shouldGenerateSkills) {
           // Use tool-specific skillsDir
           const skillsDir = path.join(projectPath, tool.skillsDir, 'skills');
+          const skillTemplatesForTool = getSkillTemplatesForTool(tool.value, workflows);
 
           // Create skill directories and SKILL.md files
-          for (const { template, dirName } of skillTemplates) {
+          for (const { template, dirName } of skillTemplatesForTool) {
             const skillDir = path.join(skillsDir, dirName);
             const skillFile = path.join(skillDir, 'SKILL.md');
 
@@ -656,7 +657,9 @@ export class InitCommand {
       const delivery: Delivery = globalConfig.delivery ?? 'both';
       const workflows = getProfileWorkflows(profile, globalConfig.workflows);
       const toolDirs = [...new Set(successfulTools.map((t) => t.skillsDir))].join(', ');
-      const skillCount = delivery !== 'commands' ? getSkillTemplates(workflows).length : 0;
+      const skillCount = delivery !== 'commands'
+        ? Math.max(...successfulTools.map((tool) => getManagedSkillEntriesForTool(tool.value, workflows).length))
+        : 0;
       const commandCount = delivery !== 'skills'
         ? Math.max(...successfulTools.map((tool) => getManagedCommandIdsForTool(tool.value, workflows).length))
         : 0;
@@ -738,10 +741,15 @@ export class InitCommand {
 
   private async removeSkillDirs(skillsDir: string): Promise<number> {
     let removed = 0;
+    const skillDirNames = new Set<string>([
+      ...Object.values(WORKFLOW_TO_SKILL_DIR),
+      'openspec-osj-runtime-status',
+      'openspec-osj-runtime-explain',
+      'openspec-osj-approval-show',
+      'openspec-osj-timer-report',
+    ]);
 
-    for (const workflow of ALL_WORKFLOWS) {
-      const dirName = WORKFLOW_TO_SKILL_DIR[workflow];
-      if (!dirName) continue;
+    for (const dirName of skillDirNames) {
 
       const skillDir = path.join(skillsDir, dirName);
       try {
