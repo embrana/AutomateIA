@@ -137,7 +137,8 @@ export function getOsjTicketsSkillTemplate(): SkillTemplate {
       'osj tickets --json',
       `- List tickets in a structured, scan-friendly way that includes ticket key and title/summary.
 - Include status, assignee, and URL when the CLI exposes them.
-- In **Next step**, suggest \`/osj-purpose-start <KEY>\` using a concrete ticket from the returned list when one exists.`
+- In **Next step**, suggest \`/osj-purpose-start <KEY>\` using a concrete ticket from the returned list when one exists.
+- If the command fails with a network, auth, DNS, or \`fetch failed\` style error, retry once with escalated permissions when the environment supports approvals before concluding that Jira is unavailable.`
     ),
     license: 'MIT',
     compatibility: 'Requires the osj CLI in the current project.',
@@ -174,7 +175,8 @@ Text supplied with \`/osj-purpose-start\` can be:
    - run \`osj purpose\` with those arguments
    - ensure \`--import-ticket\` is included unless it is already present
 5. Run the command in the current project.
-6. Summarize the result for the user.
+6. If the command fails with a network, auth, DNS, or \`fetch failed\` style error while talking to Jira, retry once with escalated permissions when the environment supports approvals.
+7. Summarize the result for the user.
 
 **Response format**
 
@@ -218,6 +220,7 @@ Respond with compact Markdown sections in this order:
 
 - Mutate state only when a Jira issue key or explicit \`--jira\` argument is present.
 - Never guess a Jira issue key. If none was provided, list tickets instead.
+- If Jira access fails because of sandboxed network restrictions, retry once with escalated permissions when the environment supports approvals.
 - Prefer the real \`osj\` CLI output over guesses.
 - If the command fails, show the relevant error and suggest the safest next step.`,
     license: 'MIT',

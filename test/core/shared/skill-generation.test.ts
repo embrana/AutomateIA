@@ -137,6 +137,15 @@ describe('skill-generation', () => {
       expect(purposeStartSkill?.template.instructions).toContain('build `osj purpose --jira REB-234 --import-ticket`');
       expect(purposeStartSkill?.template.instructions).toContain('**Command**');
       expect(purposeStartSkill?.template.instructions).toContain('Never guess a Jira issue key.');
+      expect(purposeStartSkill?.template.instructions).toContain('retry once with escalated permissions');
+    });
+
+    it('should tell the Codex /osj-tickets skill to retry Jira fetches with escalated permissions', () => {
+      const ticketsSkill = getSkillTemplatesForTool('codex', ['explore'])
+        .find((entry) => entry.dirName === 'openspec-osj-tickets');
+
+      expect(ticketsSkill?.template.instructions).toContain('`fetch failed` style error');
+      expect(ticketsSkill?.template.instructions).toContain('retry once with escalated permissions');
     });
   });
 
