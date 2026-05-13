@@ -27,6 +27,7 @@ import {
   purpose as startTimerSession,
   report as timerReport,
   resume as resumeTimer,
+  showImportedTicket,
   startManualHumanTimer,
   status as timerStatus,
   switchBlock as switchTimerBlock,
@@ -439,6 +440,22 @@ program
         console.log(formatTicketSummary(ticket));
         console.log(`  ${ticket.url}`);
       }
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('ticket')
+  .description('Inspect Jira ticket context imported into the active timer session')
+  .command('show')
+  .description('Show the Jira ticket context imported into the active timer session')
+  .option('--json', 'Output imported ticket as JSON')
+  .action(async (options: { json?: boolean }) => {
+    try {
+      await showImportedTicket(options);
     } catch (error) {
       console.log();
       ora().fail(`Error: ${(error as Error).message}`);

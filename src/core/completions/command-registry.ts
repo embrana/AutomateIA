@@ -184,6 +184,20 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
     ],
   },
   {
+    name: 'ticket',
+    description: 'Inspect Jira ticket context imported into the active timer session',
+    flags: [],
+    subcommands: [
+      {
+        name: 'show',
+        description: 'Show the Jira ticket context imported into the active timer session',
+        flags: [
+          COMMON_FLAGS.json,
+        ],
+      },
+    ],
+  },
+  {
     name: 'timer',
     description: 'Manage the OpenSpec work timer',
     flags: [],

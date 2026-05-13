@@ -381,6 +381,8 @@ export class UpdateCommand {
       'openspec-osj-runtime-explain',
       'openspec-osj-approval-show',
       'openspec-osj-timer-report',
+      'openspec-osj-timer-cancel',
+      'openspec-osj-ticket-show',
     ]);
 
     for (const dirName of skillDirNames) {

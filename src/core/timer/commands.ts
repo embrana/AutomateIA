@@ -85,6 +85,18 @@ export interface TimerReportOptions {
   comment?: string;
 }
 
+export interface ShowImportedTicketOptions {
+  json?: boolean;
+}
+
+export interface ImportedTicketView {
+  found: boolean;
+  reason: 'ok' | 'no_active_session' | 'no_imported_ticket';
+  message: string;
+  jira_issue_key: string | null;
+  ticket: ImportedJiraTicket | null;
+}
+
 interface WorklogGroup {
   block_key: string;
   actor_mode: TimerActorMode;
@@ -814,6 +826,55 @@ export async function status(options: { blocks?: boolean } = {}): Promise<void> 
   if (session.sync_error) {
     console.log(`Sync error: ${session.sync_error}`);
   }
+}
+
+export async function showImportedTicket(options: ShowImportedTicketOptions = {}): Promise<void> {
+  const session = await getActiveSession();
+  const result: ImportedTicketView = !session
+    ? {
+        found: false,
+        reason: 'no_active_session',
+        message: 'No active OpenSpec session found.',
+        jira_issue_key: null,
+        ticket: null,
+      }
+    : !session.jira_ticket
+      ? {
+          found: false,
+          reason: 'no_imported_ticket',
+          message: `Active session for ${session.jira_issue_key} has no imported Jira ticket context.`,
+          jira_issue_key: session.jira_issue_key,
+          ticket: null,
+        }
+      : {
+          found: true,
+          reason: 'ok',
+          message: `Imported Jira ticket context is available for ${session.jira_ticket.key}.`,
+          jira_issue_key: session.jira_issue_key,
+          ticket: session.jira_ticket,
+        };
+
+  if (options.json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  if (!result.found) {
+    console.log(result.message);
+    if (result.reason === 'no_imported_ticket') {
+      console.log("Start the session with `osj purpose --jira PROJ-123 --import-ticket` to persist ticket content locally.");
+    }
+    return;
+  }
+
+  const ticket = result.ticket!;
+  console.log(`Ticket: ${ticket.key}`);
+  console.log(`Summary: ${ticket.summary}`);
+  console.log(`Status: ${ticket.status ?? 'Unknown'}`);
+  console.log(`Assignee: ${ticket.assignee ?? 'Unassigned'}`);
+  console.log(`URL: ${ticket.url}`);
+  console.log('Description:');
+  console.log(ticket.description_text || 'No Jira description provided.');
 }
 
 export async function report(options: TimerReportOptions = {}): Promise<void> {

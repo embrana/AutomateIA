@@ -273,6 +273,8 @@ Old instructions content
         expect(await FileSystemUtils.fileExists(path.join(codexHome, 'prompts', 'osj-runtime-explain.md'))).toBe(true);
         expect(await FileSystemUtils.fileExists(path.join(codexHome, 'prompts', 'osj-approval-show.md'))).toBe(true);
         expect(await FileSystemUtils.fileExists(path.join(codexHome, 'prompts', 'osj-timer-report.md'))).toBe(true);
+        expect(await FileSystemUtils.fileExists(path.join(codexHome, 'prompts', 'osj-timer-cancel.md'))).toBe(true);
+        expect(await FileSystemUtils.fileExists(path.join(codexHome, 'prompts', 'osj-ticket-show.md'))).toBe(true);
         expect(await FileSystemUtils.fileExists(path.join(codexHome, 'prompts', 'osj-tickets.md'))).toBe(true);
         expect(await FileSystemUtils.fileExists(path.join(codexHome, 'prompts', 'osj-purpose-start.md'))).toBe(true);
         expect(await FileSystemUtils.fileExists(path.join(codexHome, 'prompts', 'osj-archive-retry.md'))).toBe(true);
@@ -282,6 +284,8 @@ Old instructions content
         expect(await FileSystemUtils.fileExists(path.join(testDir, '.codex', 'skills', 'openspec-osj-purpose-start', 'SKILL.md'))).toBe(true);
         expect(await FileSystemUtils.fileExists(path.join(testDir, '.codex', 'skills', 'openspec-osj-archive-retry', 'SKILL.md'))).toBe(true);
         expect(await FileSystemUtils.fileExists(path.join(testDir, '.codex', 'skills', 'openspec-osj-archive-session', 'SKILL.md'))).toBe(true);
+        expect(await FileSystemUtils.fileExists(path.join(testDir, '.codex', 'skills', 'openspec-osj-timer-cancel', 'SKILL.md'))).toBe(true);
+        expect(await FileSystemUtils.fileExists(path.join(testDir, '.codex', 'skills', 'openspec-osj-ticket-show', 'SKILL.md'))).toBe(true);
 
         const promptContent = await fs.readFile(path.join(codexHome, 'prompts', 'osj-runtime-status.md'), 'utf-8');
         expect(promptContent).toContain('openspec-osj-runtime-status');
@@ -304,6 +308,14 @@ Old instructions content
         const archiveSkillContent = await fs.readFile(path.join(testDir, '.codex', 'skills', 'openspec-osj-archive-session', 'SKILL.md'), 'utf-8');
         expect(archiveSkillContent).toContain('Never use it to archive an active change.');
         expect(archiveSkillContent).toContain('osj archive --comment "Implementation session"');
+
+        const timerCancelSkillContent = await fs.readFile(path.join(testDir, '.codex', 'skills', 'openspec-osj-timer-cancel', 'SKILL.md'), 'utf-8');
+        expect(timerCancelSkillContent).toContain('`osj timer cancel`');
+        expect(timerCancelSkillContent).toContain('cancel does not archive that change');
+
+        const ticketShowSkillContent = await fs.readFile(path.join(testDir, '.codex', 'skills', 'openspec-osj-ticket-show', 'SKILL.md'), 'utf-8');
+        expect(ticketShowSkillContent).toContain('`osj ticket show --json`');
+        expect(ticketShowSkillContent).toContain('no imported Jira ticket context');
       } finally {
         if (originalCodexHome === undefined) {
           delete process.env.CODEX_HOME;

@@ -9,6 +9,7 @@ import {
   purpose,
   report,
   resume,
+  showImportedTicket,
   startManualHumanTimer,
   switchBlock,
   validateIssueKey,
@@ -177,6 +178,67 @@ describe('OpenSpec Jira work timer', () => {
     );
     expect(consoleLogSpy).toHaveBeenCalledWith(
       'Imported Jira ticket context: PROJ-123 - Implement OpenSpec Jira tracking'
+    );
+  });
+
+  it('shows imported Jira ticket context from the active session as JSON', async () => {
+    vi.setSystemTime(new Date('2026-04-19T17:03:11.000Z'));
+    fetchSpy.mockResolvedValueOnce(jsonResponse({
+      key: 'PROJ-123',
+      fields: {
+        summary: 'Implement OpenSpec Jira tracking',
+        status: { name: 'In Progress' },
+        assignee: { displayName: 'Emiliano' },
+        description: {
+          type: 'doc',
+          version: 1,
+          content: [
+            {
+              type: 'paragraph',
+              content: [{ type: 'text', text: 'Track local OpenSpec work sessions.' }],
+            },
+          ],
+        },
+      },
+    }));
+
+    await purpose('PROJ-123', { importTicket: true });
+    consoleLogSpy.mockClear();
+
+    await showImportedTicket({ json: true });
+
+    expect(consoleLogSpy).toHaveBeenCalledTimes(1);
+    const payload = JSON.parse(consoleLogSpy.mock.calls[0][0] as string);
+    expect(payload).toMatchObject({
+      found: true,
+      reason: 'ok',
+      jira_issue_key: 'PROJ-123',
+      ticket: {
+        key: 'PROJ-123',
+        summary: 'Implement OpenSpec Jira tracking',
+        status: 'In Progress',
+        assignee: 'Emiliano',
+        description_text: 'Track local OpenSpec work sessions.',
+      },
+    });
+  });
+
+  it('explains when the active session has no imported Jira ticket context', async () => {
+    vi.setSystemTime(new Date('2026-04-19T17:03:11.000Z'));
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ key: 'PROJ-123' }));
+
+    await purpose('PROJ-123');
+    consoleLogSpy.mockClear();
+
+    await showImportedTicket();
+
+    expect(consoleLogSpy).toHaveBeenNthCalledWith(
+      1,
+      'Active session for PROJ-123 has no imported Jira ticket context.'
+    );
+    expect(consoleLogSpy).toHaveBeenNthCalledWith(
+      2,
+      "Start the session with `osj purpose --jira PROJ-123 --import-ticket` to persist ticket content locally."
     );
   });
 

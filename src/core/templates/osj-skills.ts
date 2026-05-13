@@ -131,6 +131,91 @@ export function getOsjTimerReportSkillTemplate(): SkillTemplate {
   };
 }
 
+export function getOsjTimerCancelSkillTemplate(): SkillTemplate {
+  return {
+    name: 'openspec-osj-timer-cancel',
+    description: 'Discard the active OpenSpec timer session with `osj timer cancel` and summarize the outcome.',
+    instructions: `Help the user discard the active OpenSpec timer session.
+
+**Input**
+
+Text supplied with \`/osj-timer-cancel\` should not be appended as CLI arguments. This helper only runs the exact command \`osj timer cancel\`.
+
+**Steps**
+
+1. Inspect the current runtime first with \`osj runtime status\`.
+2. If there is no active session, stop and explain that there is nothing to cancel.
+3. Run:
+   - \`osj timer cancel\`
+4. Summarize the result for the user.
+
+**Response format**
+
+Respond with compact Markdown sections in this order:
+
+**Status**
+- One line stating whether the session cancel ran or found no active session.
+
+**Command**
+- Show the exact \`osj\` CLI command that was run.
+- If no command was run, write \`- Not run.\`
+
+**Key facts**
+- Short bullets with the most important exact values from the CLI output.
+
+**Conclusion**
+- One or two bullets explaining what the current state means for the user.
+
+**State conflicts**
+- List conflicting, stale, or risky state combinations the user should notice.
+- If none exist, write \`- None.\`
+
+**Next step**
+- Give the safest next command.
+
+**Evidence**
+- Include only when the CLI points to relevant runtime paths, session ids, or discard behavior worth surfacing.
+
+**Style rules**
+
+- Do not narrate execution with phrases like "I ran", "The CLI reported", or "using the skill".
+- Do not mention the helper, prompt, or skill implementation details.
+- Prefer bullets over paragraphs.
+- Prefer exact CLI values over guesses.
+- Keep the answer scan-friendly and operational.
+
+**Guardrails**
+
+- Use this helper only when the user explicitly wants to discard, remove, or cancel the active session.
+- If the runtime or timer state is \`sync_pending\`, call out that cancel discards the pending unsynced Jira worklog instead of retrying it.
+- If the active session points at an OpenSpec change, call out that cancel does not archive that change.
+- Do not append arbitrary extra arguments to \`osj timer cancel\`.
+- Prefer the real \`osj\` CLI output over guesses.
+- If the command fails, show the relevant error and suggest the safest next step.`,
+    license: 'MIT',
+    compatibility: 'Requires the osj CLI in the current project.',
+    metadata: { author: 'openspec', version: '1.0' },
+  };
+}
+
+export function getOsjTicketShowSkillTemplate(): SkillTemplate {
+  return {
+    name: 'openspec-osj-ticket-show',
+    description: 'Run `osj ticket show --json` and summarize the imported Jira ticket context from the active session.',
+    instructions: buildReadOnlySkillInstructions(
+      '/osj-ticket-show',
+      'osj ticket show --json',
+      `- Show the imported Jira ticket key, summary, status, assignee, URL, and description text when present.
+- If no active session exists, say that directly.
+- If the active session has no imported Jira ticket context, explain that the session was likely not started with \`--import-ticket\`.
+- In **Next step**, suggest \`/osj-purpose-start AA-8\` only when the user still needs to start a session with imported Jira context.`
+    ),
+    license: 'MIT',
+    compatibility: 'Requires the osj CLI in the current project.',
+    metadata: { author: 'openspec', version: '1.0' },
+  };
+}
+
 export function getOsjTicketsSkillTemplate(): SkillTemplate {
   return {
     name: 'openspec-osj-tickets',

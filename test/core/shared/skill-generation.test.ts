@@ -97,6 +97,8 @@ describe('skill-generation', () => {
       expect(dirNames).toContain('openspec-explore');
       expect(dirNames).toContain('openspec-osj-archive-retry');
       expect(dirNames).toContain('openspec-osj-archive-session');
+      expect(dirNames).toContain('openspec-osj-timer-cancel');
+      expect(dirNames).toContain('openspec-osj-ticket-show');
       expect(dirNames).toContain('openspec-osj-tickets');
       expect(dirNames).toContain('openspec-osj-purpose-start');
       expect(dirNames).toContain('openspec-osj-runtime-status');
@@ -110,6 +112,8 @@ describe('skill-generation', () => {
         'openspec-explore',
         'openspec-osj-archive-retry',
         'openspec-osj-archive-session',
+        'openspec-osj-timer-cancel',
+        'openspec-osj-ticket-show',
         'openspec-osj-tickets',
         'openspec-osj-purpose-start',
         'openspec-osj-runtime-status',
@@ -169,6 +173,25 @@ describe('skill-generation', () => {
       expect(archiveRetrySkill?.template.instructions).toContain('default: `osj archive --retry`');
       expect(archiveRetrySkill?.template.instructions).toContain('This helper is only for retrying a pending Jira sync.');
       expect(archiveRetrySkill?.template.instructions).toContain('prefer `osj timer cancel` only when the CLI indicates discard is the remaining safe path.');
+    });
+
+    it('should make the Codex /osj-timer-cancel skill call out sync_pending discard risk', () => {
+      const timerCancelSkill = getSkillTemplatesForTool('codex', ['explore'])
+        .find((entry) => entry.dirName === 'openspec-osj-timer-cancel');
+
+      expect(timerCancelSkill?.template.instructions).toContain('Inspect the current runtime first with `osj runtime status`');
+      expect(timerCancelSkill?.template.instructions).toContain('`osj timer cancel`');
+      expect(timerCancelSkill?.template.instructions).toContain('cancel discards the pending unsynced Jira worklog instead of retrying it');
+      expect(timerCancelSkill?.template.instructions).toContain('cancel does not archive that change');
+    });
+
+    it('should make the Codex /osj-ticket-show skill expose imported ticket content from the active session', () => {
+      const ticketShowSkill = getSkillTemplatesForTool('codex', ['explore'])
+        .find((entry) => entry.dirName === 'openspec-osj-ticket-show');
+
+      expect(ticketShowSkill?.template.instructions).toContain('default: `osj ticket show --json`');
+      expect(ticketShowSkill?.template.instructions).toContain('description text');
+      expect(ticketShowSkill?.template.instructions).toContain('no imported Jira ticket context');
     });
 
     it('should make read-only /osj helpers execute only their own exact command', () => {
@@ -285,6 +308,8 @@ describe('skill-generation', () => {
       expect(ids).toContain('apply');
       expect(ids).toContain('osj-archive-retry');
       expect(ids).toContain('osj-archive-session');
+      expect(ids).toContain('osj-timer-cancel');
+      expect(ids).toContain('osj-ticket-show');
       expect(ids).toContain('osj-tickets');
       expect(ids).toContain('osj-purpose-start');
       expect(ids).toContain('osj-runtime-status');
@@ -307,6 +332,8 @@ describe('skill-generation', () => {
         'explore',
         'osj-archive-retry',
         'osj-archive-session',
+        'osj-timer-cancel',
+        'osj-ticket-show',
         'osj-tickets',
         'osj-purpose-start',
         'osj-runtime-status',
@@ -353,6 +380,26 @@ describe('skill-generation', () => {
       expect(archiveRetry?.body).toContain('osj archive --retry');
       expect(archiveRetry?.body).not.toContain('**Steps**');
       expect(archiveRetry?.body).not.toContain('**Guardrails**');
+    });
+
+    it('should keep the Codex /osj-timer-cancel prompt minimal and skill-backed', () => {
+      const timerCancel = getCommandContentsForTool('codex', ['explore'])
+        .find((content) => content.id === 'osj-timer-cancel');
+
+      expect(timerCancel?.body).toContain('openspec-osj-timer-cancel');
+      expect(timerCancel?.body).toContain('osj timer cancel');
+      expect(timerCancel?.body).not.toContain('**Steps**');
+      expect(timerCancel?.body).not.toContain('**Guardrails**');
+    });
+
+    it('should keep the Codex /osj-ticket-show prompt minimal and skill-backed', () => {
+      const ticketShow = getCommandContentsForTool('codex', ['explore'])
+        .find((content) => content.id === 'osj-ticket-show');
+
+      expect(ticketShow?.body).toContain('openspec-osj-ticket-show');
+      expect(ticketShow?.body).toContain('osj ticket show --json');
+      expect(ticketShow?.body).not.toContain('**Steps**');
+      expect(ticketShow?.body).not.toContain('**Guardrails**');
     });
   });
 

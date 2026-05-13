@@ -45,6 +45,9 @@ const FULL_HELP = `OpenSpec Jira/Tempo Help
 
 4. Check progress before archive
 
+   osj ticket show
+      Show the Jira ticket context imported into the active timer session.
+
    osj timer status
       Show the active timer session.
 
@@ -118,6 +121,7 @@ const SHORT_HELP = `OpenSpec Jira/Tempo Basic Flow
    osj purpose --pick --import-ticket --create-change
 
 3. Work/check
+   osj ticket show
    osj timer status --blocks
    osj timer report
 

@@ -359,6 +359,7 @@ Create artifacts later from the active session:
   osj new change --from-session
 
 Preview worklogs:
+  osj ticket show
   osj timer report
   osj archive <change-name> --dry-run --comment "Implementation session"
 

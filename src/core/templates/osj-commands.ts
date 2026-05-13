@@ -62,6 +62,32 @@ export function getOsjTimerReportCommandTemplate(): CommandTemplate {
   };
 }
 
+export function getOsjTimerCancelCommandTemplate(): CommandTemplate {
+  return {
+    name: 'OSJ: Timer Cancel',
+    description: 'Discard the active OpenSpec timer session through the osj CLI',
+    category: 'OSJ Timer',
+    tags: ['osj', 'timer', 'cancel', 'jira'],
+    content: `Use the \`openspec-osj-timer-cancel\` skill to discard the active OpenSpec timer session with \`osj timer cancel\`.
+
+If the skill is not available in this project, first inspect \`osj runtime status\`. Only fall back to \`osj timer cancel\` when the user explicitly wants to discard the active session, especially if the session is \`sync_pending\`.`,
+  };
+}
+
+export function getOsjTicketShowCommandTemplate(): CommandTemplate {
+  return {
+    name: 'OSJ: Ticket Show',
+    description: 'Show the Jira ticket context imported into the active session through the osj CLI',
+    category: 'OSJ Jira',
+    tags: ['osj', 'ticket', 'jira', 'session'],
+    content: buildReadOnlyCommandContent(
+      '/osj-ticket-show',
+      'openspec-osj-ticket-show',
+      'osj ticket show --json'
+    ),
+  };
+}
+
 export function getOsjTicketsCommandTemplate(): CommandTemplate {
   return {
     name: 'OSJ: Tickets',

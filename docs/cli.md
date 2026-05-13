@@ -404,6 +404,29 @@ openspec/changes/<change-name>/
 
 The initial delta spec is built from the Jira description. If the description already contains OpenSpec delta sections such as `## ADDED Requirements`, OpenSpec writes it as-is. If the description contains structured SDD sections such as `## Acceptance Criteria`, `## Business Rules`, `## Domain / Data / Integration Contracts`, `## UX / Error States`, or `## Out of Scope`, OpenSpec creates a richer requirement and turns acceptance criteria headings like `### CA-1 — ...`, `### CA-1 - ...`, or `### CA-1: ...` into OpenSpec scenarios. The structured importer also accepts Spanish section aliases such as `## Contexto`, `## Objetivos`, `## Criterios de aceptación`, `## Reglas de negocio`, `## Estados de UX / Error`, `## Fuera de alcance`, and `## Trazabilidad`.
 
+### `openspec ticket show`
+
+Show the Jira ticket context imported into the active session.
+
+```
+openspec ticket show [--json]
+```
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output imported ticket context as JSON |
+
+**Examples:**
+
+```bash
+openspec ticket show
+openspec ticket show --json
+```
+
+This command reads the imported Jira context from the active timer session. If the current session was not started with `--import-ticket`, it explains that no imported ticket context is available.
+
 ### `openspec timer`
 
 Inspect or cancel the active work timer.

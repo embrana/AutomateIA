@@ -7,6 +7,7 @@ describe('hlp command text', () => {
 
     expect(text).toContain('OpenSpec Jira/Tempo Help');
     expect(text).toContain('osj tickets');
+    expect(text).toContain('osj ticket show');
     expect(text).toContain('osj purpose --pick --import-ticket --create-change');
     expect(text).toContain('osj timer report');
     expect(text).toContain('osj archive <change-name> --dry-run');
@@ -18,6 +19,7 @@ describe('hlp command text', () => {
 
     expect(text).toContain('OpenSpec Jira/Tempo Basic Flow');
     expect(text).toContain('1. Configure');
+    expect(text).toContain('osj ticket show');
     expect(text).not.toContain('Control time blocks');
   });
 
