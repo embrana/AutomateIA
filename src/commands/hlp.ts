@@ -31,6 +31,12 @@ const FULL_HELP = `OpenSpec Jira/Tempo Help
    osj purpose --pick --import-ticket
       Pick an assigned Jira ticket and start a timer with Jira context.
 
+   osj opsx track propose discovery --json
+      Mark collaborative proposal discovery for the active session before creating artifacts.
+
+   osj opsx create-change <change-name>
+      Preferred native OPSX helper: create a change from the active session and attach it back to the session.
+
    osj purpose --pick --import-ticket --create-change
       Pick a ticket, start a timer, import Jira context, and create OpenSpec artifacts.
 
@@ -41,12 +47,21 @@ const FULL_HELP = `OpenSpec Jira/Tempo Help
       Start a timer for a known ticket and create proposal.md, tasks.md, jira-ticket.md, and spec.md.
 
    osj new change --from-session
-      Create OpenSpec artifacts from the Jira ticket in the active timer session.
+      Low-level/manual fallback to create OpenSpec artifacts from the Jira ticket in the active timer session.
 
 4. Check progress before archive
 
    osj ticket show
       Show the Jira ticket context imported into the active timer session.
+
+   osj opsx track explore --json
+      Expose imported Jira ticket context for /opsx-explore and switch to human_agent_interaction / spec when possible.
+
+   osj opsx track propose discovery --json
+      Mark collaborative proposal discovery before creating artifacts.
+
+   osj opsx create-change <change-name>
+      Create a change with session-aware tracking and attach it back to the active session when possible.
 
    osj timer status
       Show the active timer session.
@@ -77,6 +92,12 @@ const FULL_HELP = `OpenSpec Jira/Tempo Help
    osj timer start --jira PROJ-123 --description "Manual IDE work"
       Start a manual human timer when work continues outside purpose/create-change.
 
+   osj opsx track propose generation
+      Mark artifact generation as ai_autonomous / spec.
+
+   osj opsx track propose review
+      Return to human_agent_interaction / spec for artifact review with the developer.
+
 6. Archive and sync time
 
    osj validate <change-name> --type change
@@ -96,7 +117,10 @@ const FULL_HELP = `OpenSpec Jira/Tempo Help
 Typical happy path:
 
    osj tickets
-   osj purpose --pick --import-ticket --create-change
+   osj purpose --pick --import-ticket
+   osj opsx track propose discovery --json
+   osj opsx create-change <change-name>
+   osj opsx track propose review
    osj timer status --blocks
    osj timer report
    osj validate <change-name> --type change
@@ -106,6 +130,8 @@ Typical happy path:
 Notes:
 
    - Use --dry-run before archive when you want to inspect worklogs first.
+   - /opsx-explore and /opsx-propose in supported AI tools now call the same osj opsx helpers above when a Jira-backed session is active.
+   - osj new change --from-session still works as a low-level/manual fallback when you do not want the native OPSX helper.
    - Use timer bugfix when archive validation fails and you continue correcting the change.
    - Jira API tokens are stored in global OpenSpec config and are redacted by config show.`;
 
@@ -118,9 +144,11 @@ const SHORT_HELP = `OpenSpec Jira/Tempo Basic Flow
 
 2. Pick/start
    osj tickets
-   osj purpose --pick --import-ticket --create-change
+   osj purpose --pick --import-ticket
 
 3. Work/check
+   osj opsx track propose discovery --json
+   osj opsx create-change <change-name>
    osj ticket show
    osj timer status --blocks
    osj timer report

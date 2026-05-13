@@ -82,6 +82,16 @@ You have full context of the OpenSpec system. Use it naturally, don't force it.
 
 ### Check for context
 
+At the start, bootstrap native OPSX exploration tracking and session context:
+\`\`\`bash
+osj opsx track explore --json
+\`\`\`
+
+Use this native helper as the source of truth for:
+- whether an active \`osj\` session exists
+- whether collaborative \`human_agent_interaction / spec\` tracking was applied
+- whether imported Jira ticket context is available
+
 At the start, quickly check what exists:
 \`\`\`bash
 openspec list --json
@@ -91,6 +101,8 @@ This tells you:
 - If there are active changes
 - Their names, schemas, and status
 - What the user might be working on
+
+Use imported Jira ticket context from the native \`osj opsx track explore --json\` result as the primary discovery input when it exists. Use \`openspec list --json\` and artifact reads to expand the picture, not to replace session context.
 
 ### When no change exists
 
@@ -286,7 +298,8 @@ But this summary is optional. Sometimes the thinking IS the value.
 - **Don't auto-capture** - Offer to save insights, don't just do it
 - **Do visualize** - A good diagram is worth many paragraphs
 - **Do explore the codebase** - Ground discussions in reality
-- **Do question assumptions** - Including the user's and your own`,
+- **Do question assumptions** - Including the user's and your own
+- **Do preserve collaborative tracking** - Use \`osj opsx track explore\` as the native authority for keeping an active session in \`human_agent_interaction / spec\``,
     license: 'MIT',
     compatibility: 'Requires openspec CLI.',
     metadata: { author: 'openspec', version: '1.0' },
@@ -378,6 +391,16 @@ You have full context of the OpenSpec system. Use it naturally, don't force it.
 
 ### Check for context
 
+At the start, bootstrap native OPSX exploration tracking and session context:
+\`\`\`bash
+osj opsx track explore --json
+\`\`\`
+
+Use this native helper as the source of truth for:
+- whether an active \`osj\` session exists
+- whether collaborative \`human_agent_interaction / spec\` tracking was applied
+- whether imported Jira ticket context is available
+
 At the start, quickly check what exists:
 \`\`\`bash
 openspec list --json
@@ -387,6 +410,8 @@ This tells you:
 - If there are active changes
 - Their names, schemas, and status
 - What the user might be working on
+
+Use imported Jira ticket context from the native \`osj opsx track explore --json\` result as the primary discovery input when it exists. Use \`openspec list --json\` and artifact reads to expand the picture, not to replace session context.
 
 If the user mentioned a specific change name, read its artifacts for context.
 
@@ -464,6 +489,7 @@ When things crystallize, you might offer a summary - but it's optional. Sometime
 - **Don't auto-capture** - Offer to save insights, don't just do it
 - **Do visualize** - A good diagram is worth many paragraphs
 - **Do explore the codebase** - Ground discussions in reality
-- **Do question assumptions** - Including the user's and your own`
+- **Do question assumptions** - Including the user's and your own
+- **Do preserve collaborative tracking** - Use \`osj opsx track explore\` as the native authority for keeping an active session in \`human_agent_interaction / spec\``
   };
 }

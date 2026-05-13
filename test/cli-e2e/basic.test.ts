@@ -111,6 +111,21 @@ describe('openspec CLI e2e basics', () => {
     expectJsonOnlyOutput(result);
   });
 
+  it('keeps osj opsx track explore --json free of spinner output without an active session', async () => {
+    const projectDir = await prepareFixture('tmp-init');
+    const result = await runCLI(['opsx', 'track', 'explore', '--json'], { cwd: projectDir });
+    expectJsonOnlyOutput(result);
+    const json = JSON.parse(result.stdout);
+    expect(json).toMatchObject({
+      workflow: 'explore',
+      phase: 'discovery',
+      session: {
+        found: false,
+        tracking_applied: false,
+      },
+    });
+  });
+
   it('keeps templates --json free of spinner output', async () => {
     const projectDir = await prepareFixture('tmp-init');
     const result = await runCLI(['templates', '--json'], { cwd: projectDir });

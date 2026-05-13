@@ -1,6 +1,6 @@
 # CLI Reference
 
-The OpenSpec CLI (`openspec`) provides terminal commands for project setup, validation, status inspection, and management. These commands complement the AI slash commands (like `/opsx:propose`) documented in [Commands](commands.md).
+The OpenSpec CLI (`openspec`) provides terminal commands for project setup, validation, status inspection, and management. These commands complement the AI slash commands (like `/opsx:propose`, or `/opsx-propose` in Codex-style tools) documented in [Commands](commands.md).
 
 > Note: this Jira/Tempo fork installs a separate binary named `osj` so it can coexist with the official `openspec` package. When using this fork, run the same commands with `osj` in place of `openspec`.
 
@@ -13,6 +13,7 @@ The OpenSpec CLI (`openspec`) provides terminal commands for project setup, vali
 | **Validation** | `validate` | Check changes and specs for issues |
 | **Lifecycle** | `archive` | Finalize completed changes |
 | **Timer** | `purpose`, `timer` | Track local work time and sync Jira worklogs |
+| **OPSX Session Helpers** | `opsx track`, `opsx create-change` | Native session-aware tracking for `/opsx:explore` and `/opsx:propose` |
 | **Workflow** | `status`, `instructions`, `templates`, `schemas` | Artifact-driven workflow support |
 | **Schemas** | `schema init`, `schema fork`, `schema validate`, `schema which` | Create and manage custom workflows |
 | **Config** | `config` | View and modify settings |
@@ -133,13 +134,18 @@ openspec/
 For Codex specifically, `osj init` / `osj update` now install:
 
 - the normal `opsx-*` workflow prompts
-- a first batch of read-only `osj-*` companion prompts:
+- companion `osj-*` prompts for common session work, including:
+  - `/osj-purpose-start`
+  - `/osj-ticket-show`
+  - `/osj-tickets`
   - `/osj-runtime-status`
   - `/osj-runtime-explain`
-  - `/osj-approval-show`
   - `/osj-timer-report`
+  - `/osj-timer-cancel`
+  - `/osj-archive-retry`
+  - `/osj-approval-show`
 
-The more state-changing `osj` helpers still remain terminal-first for now.
+The generated `/opsx-explore` and `/opsx-propose` prompts also use the native `osj opsx ...` helpers when an active Jira-backed session exists.
 
 ---
 
@@ -449,6 +455,38 @@ openspec timer status
 openspec timer cancel
 ```
 
+### `openspec opsx`
+
+Native OPSX session helpers used by the Jira/Tempo fork when `/opsx:explore` and `/opsx:propose` run against an active `osj` session.
+
+```
+openspec opsx <subcommand>
+```
+
+**Subcommands:**
+
+| Subcommand | Description |
+|------------|-------------|
+| `track <workflow> [phase]` | Switch the active timer block for an OPSX workflow and expose imported Jira ticket context |
+| `create-change [name]` | Create a change with session-aware governance and attach it back to the active session when possible |
+
+**Examples:**
+
+```bash
+openspec opsx track explore --json
+openspec opsx track propose discovery --json
+openspec opsx create-change add-dark-mode
+openspec opsx track propose generation
+openspec opsx track propose review
+```
+
+**What it does:**
+
+1. Reuses the imported Jira ticket from the active session as structured OPSX context
+2. Switches timer blocks natively between `human_agent_interaction / spec` and `ai_autonomous / spec`
+3. Refuses session-aware change creation when the active session is `sync_pending`
+4. Attaches the created change back to the active session when the session is running or paused
+
 ---
 
 ## Lifecycle Commands
@@ -540,11 +578,13 @@ openspec new change --from-ticket PROJ-123
 openspec new change custom-name --from-ticket PROJ-123
 ```
 
+On this fork, `osj new change --from-session` still exists as a low-level helper when you want to create artifacts directly from the active Jira session. For the native OPSX-backed flow behind `/opsx:propose`, prefer `osj opsx create-change <name>`.
+
 ---
 
 ## Workflow Commands
 
-These commands support the artifact-driven OPSX workflow. They're useful for both humans checking progress and agents determining next steps.
+These commands support the artifact-driven OPSX workflow. They're useful for both humans checking progress and agents determining next steps. In the Jira/Tempo fork, they complement the `openspec opsx ...` session helpers described above.
 
 ### `openspec status`
 

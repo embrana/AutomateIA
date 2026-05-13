@@ -939,6 +939,20 @@ export async function switchBlock(options: SwitchBlockOptions): Promise<void> {
     throw new Error('No running OpenSpec session found.');
   }
 
+  const switchedSession = await switchRunningSessionBlock(options);
+  if (!switchedSession) {
+    throw new Error('No running OpenSpec session found.');
+  }
+  console.log(`Switched OpenSpec timer block for ${session.jira_issue_key}`);
+  console.log(`Current block: ${options.mode} / ${options.kind}`);
+}
+
+export async function switchRunningSessionBlock(options: SwitchBlockOptions): Promise<TimerSession | null> {
+  const session = await getActiveSession();
+  if (!session || session.status !== 'running') {
+    return null;
+  }
+
   const switchedAt = nowUtc();
   const switchedSession = startBlock(
     session,
@@ -951,8 +965,7 @@ export async function switchBlock(options: SwitchBlockOptions): Promise<void> {
 
   await saveActiveSession(switchedSession);
   await sessionManager.syncFromTimerSession(switchedSession);
-  console.log(`Switched OpenSpec timer block for ${session.jira_issue_key}`);
-  console.log(`Current block: ${options.mode} / ${options.kind}`);
+  return switchedSession;
 }
 
 export async function switchToAutomaticBlock(
@@ -960,29 +973,21 @@ export async function switchToAutomaticBlock(
   kind: TimerWorkKind,
   description: string
 ): Promise<boolean> {
-  const session = await getActiveSession();
-  if (!session || session.status !== 'running') {
-    return false;
-  }
-
-  const switchedAt = nowUtc();
-  const switchedSession = startBlock(session, switchedAt, mode, kind, description, 'auto');
-  await saveActiveSession(switchedSession);
-  await sessionManager.syncFromTimerSession(switchedSession);
-  return true;
+  return Boolean(await switchRunningSessionBlock({
+    mode,
+    kind,
+    description,
+    source: 'auto',
+  }));
 }
 
 export async function switchToDefaultHumanWork(description = DEFAULT_HUMAN_DESCRIPTION): Promise<boolean> {
-  const session = await getActiveSession();
-  if (!session || session.status !== 'running') {
-    return false;
-  }
-
-  const switchedAt = nowUtc();
-  const switchedSession = startBlock(session, switchedAt, 'human', 'implementation', description, 'auto');
-  await saveActiveSession(switchedSession);
-  await sessionManager.syncFromTimerSession(switchedSession);
-  return true;
+  return Boolean(await switchRunningSessionBlock({
+    mode: 'human',
+    kind: 'implementation',
+    description,
+    source: 'auto',
+  }));
 }
 
 export async function pause(): Promise<void> {

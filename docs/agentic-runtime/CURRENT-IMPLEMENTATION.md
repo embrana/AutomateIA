@@ -12,20 +12,27 @@ The repository already supports a visible multi-agent runtime slice over an acti
 
 1. `osj purpose` or `osj timer start` opens a runtime-aware session.
 2. `osj runtime status` shows ticket, session, change, and cycle state.
-3. `osj agent run context` creates normalized context artifacts.
-4. `osj agent run spec` creates or reuses OpenSpec change artifacts.
-5. `osj agent run planning` writes an execution plan.
-6. `osj agent run implementation` can prepare or invoke a configured backend, apply runtime-controlled local workspace actions, run focused verification commands, inspect the active workspace diff, apply autonomy policy checks, and write an implementation report.
-7. `osj agent run critic` reviews the implementation report against plan and context.
-8. `osj agent run validation` runs OpenSpec validation plus runtime checks and decides whether the loop should retry, escalate, or continue to delivery.
-9. `osj agent run delivery` prepares closure evidence, archive decision data, and Jira comment draft.
-10. `osj approval show|accept|reject` exposes human checkpoints as runtime artifacts.
-11. `osj orchestrate --until delivery` runs the whole current slice through governed closeout.
+3. `osj runtime explain` summarizes blockers, evidence, and next actions.
+4. `osj opsx track explore|propose ...` and `osj opsx create-change ...` provide native session-aware governance for the generated `/opsx` workflows.
+5. `osj agent run context` creates normalized context artifacts.
+6. `osj agent run spec` creates or reuses OpenSpec change artifacts.
+7. `osj agent run planning` writes an execution plan.
+8. `osj agent run implementation` can prepare or invoke a configured backend, apply runtime-controlled local workspace actions, run focused verification commands, inspect the active workspace diff, apply autonomy policy checks, and write an implementation report.
+9. `osj agent run critic` reviews the implementation report against plan and context.
+10. `osj agent run validation` runs OpenSpec validation plus runtime checks and decides whether the loop should retry, escalate, or continue to delivery.
+11. `osj agent run delivery` prepares closure evidence, archive decision data, and Jira comment draft.
+12. `osj approval show|accept|reject` exposes human checkpoints as runtime artifacts.
+13. `osj orchestrate --until delivery` runs the whole current slice through governed closeout.
 
 ## Commands Available Now
 
 ```text
 osj runtime status [--json]
+osj runtime explain [--json]
+
+osj opsx track explore [phase] [--json]
+osj opsx track propose [phase] [--json]
+osj opsx create-change [name] [--schema <name>]
 
 osj agent run context
 osj agent run spec
@@ -149,6 +156,14 @@ Current nuance:
 - Updates runtime state when approvals are resolved.
 - Drives archive gating through runtime evidence instead of CLI-only conditions.
 
+### OPSX Session Helpers
+
+- `osj opsx track explore --json` exposes imported Jira ticket context and, when the session is running, switches the active block to `human_agent_interaction / spec`.
+- `osj opsx track propose discovery --json` marks collaborative planning before artifact generation.
+- `osj opsx create-change <name>` prefers session-aware change creation, attaches the created change back to the active session, and uses autonomous `spec` tracking during generation when the session is running.
+- `osj opsx track propose generation` and `osj opsx track propose review` make the autonomous generation phase and the human/AI review phase explicit in timer evidence.
+- `sync_pending` sessions are intentionally blocked from `osj opsx create-change` until the developer recovers with `osj archive --retry` or discards with `osj timer cancel`.
+
 ## Current Cycle Semantics
 
 - The runtime creates a new execution cycle when implementation starts after no prior cycle or after a terminal cycle.
@@ -172,7 +187,8 @@ These are important and intentional:
 
 - only `ImplementationAgent` consumes the shared backend registry today; the other agents still use local deterministic logic
 - hosted API backends do not get arbitrary filesystem access; they can only affect the repo through runtime-applied `workspace_actions` or through their own external tool runtime
-- `osj runtime explain`, `osj runtime graph`, and `osj orchestrate --auto` are not implemented yet.
+- `osj runtime graph` and `osj orchestrate --auto` are not implemented yet.
+- `osj runtime explain` exists, but its policy-budget and multi-cycle explanations can still get richer.
 - Event bus and telemetry persistence are still implicit or partial rather than formalized as dedicated modules.
 - `ContextAgent` does not yet use a system prompt to synthesize a structured SDD from a weak Jira description.
 - Archive governance is implemented, but Jira comment publication is still a draft/evidence step rather than a dedicated delivery-side integration module.
@@ -181,7 +197,7 @@ These are important and intentional:
 
 The next meaningful runtime PRs should focus on operational maturity:
 
-1. add `osj runtime explain` and richer observability around why the runtime stopped
+1. deepen `osj runtime explain` and orchestration summaries around why the runtime stopped
 2. formalize event bus and telemetry persistence
 3. move more agents onto the shared backend registry where it adds real value
 4. deepen Jira-side delivery integration from draft artifacts into optional outbound actions

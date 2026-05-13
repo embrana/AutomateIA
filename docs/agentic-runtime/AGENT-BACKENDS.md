@@ -490,7 +490,7 @@ That means Vertex is now usable without manually exporting a token, as long as t
 
 - only `ImplementationAgent` consumes the backend registry today
 - there is no first-class `webhook` or `mcp_tool` backend mode yet
-- backend failures still need richer runtime explanation in future `runtime explain` work
+- backend failures still need richer coverage in `osj runtime explain` and orchestration summaries
 
 ## Important Reality Check
 

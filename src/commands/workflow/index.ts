@@ -19,4 +19,7 @@ export type { SchemasOptions } from './schemas.js';
 export { newChangeCommand } from './new-change.js';
 export type { NewChangeOptions } from './new-change.js';
 
+export { trackOpsxWorkflow, createTrackedOpsxChange } from './opsx.js';
+export type { OpsxWorkflow, OpsxWorkflowPhase, OpsxTrackOptions, OpsxCreateChangeOptions, OpsxTrackResult } from './opsx.js';
+
 export { DEFAULT_SCHEMA } from './shared.js';

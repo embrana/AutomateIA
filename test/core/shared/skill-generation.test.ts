@@ -194,6 +194,25 @@ describe('skill-generation', () => {
       expect(ticketShowSkill?.template.instructions).toContain('no imported Jira ticket context');
     });
 
+    it('should make opsx explore reuse osj session context and collaborative spec tracking', () => {
+      const exploreSkill = getSkillTemplates(['explore']).find((entry) => entry.dirName === 'openspec-explore');
+
+      expect(exploreSkill?.template.instructions).toContain('osj opsx track explore --json');
+      expect(exploreSkill?.template.instructions).toContain('source of truth');
+      expect(exploreSkill?.template.instructions).toContain('human_agent_interaction / spec');
+      expect(exploreSkill?.template.instructions).toContain('primary discovery input');
+    });
+
+    it('should make opsx propose prefer session-aware change creation and explicit spec block tracking', () => {
+      const proposeSkill = getSkillTemplates(['propose']).find((entry) => entry.dirName === 'openspec-propose');
+
+      expect(proposeSkill?.template.instructions).toContain('osj opsx track propose discovery --json');
+      expect(proposeSkill?.template.instructions).toContain('osj opsx create-change "<name>"');
+      expect(proposeSkill?.template.instructions).toContain('hard-wires the correct governance behavior');
+      expect(proposeSkill?.template.instructions).toContain('osj opsx track propose generation');
+      expect(proposeSkill?.template.instructions).toContain('osj opsx track propose review');
+    });
+
     it('should make read-only /osj helpers execute only their own exact command', () => {
       const timerReportSkill = getSkillTemplatesForTool('codex', ['explore'])
         .find((entry) => entry.dirName === 'openspec-osj-timer-report');
@@ -400,6 +419,17 @@ describe('skill-generation', () => {
       expect(ticketShow?.body).toContain('osj ticket show --json');
       expect(ticketShow?.body).not.toContain('**Steps**');
       expect(ticketShow?.body).not.toContain('**Guardrails**');
+    });
+
+    it('should expose session-aware osj tracking guidance in the opsx explore and propose prompts', () => {
+      const explore = getCommandContents(['explore']).find((content) => content.id === 'explore');
+      const propose = getCommandContents(['propose']).find((content) => content.id === 'propose');
+
+      expect(explore?.body).toContain('osj opsx track explore --json');
+      expect(propose?.body).toContain('osj opsx track propose discovery --json');
+      expect(propose?.body).toContain('osj opsx create-change "<name>"');
+      expect(propose?.body).toContain('osj opsx track propose generation');
+      expect(propose?.body).toContain('osj opsx track propose review');
     });
   });
 

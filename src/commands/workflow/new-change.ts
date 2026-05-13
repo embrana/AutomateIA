@@ -42,7 +42,7 @@ export async function newChangeCommand(name: string | undefined, options: NewCha
 
   async function maybeAttachChangeToActiveSession(change: { name: string; path: string; schema: string }, expectedIssueKey?: string): Promise<void> {
     const activeSession = await getActiveSession(projectRoot);
-    if (!activeSession || activeSession.status !== 'running') {
+    if (!activeSession || (activeSession.status !== 'running' && activeSession.status !== 'paused')) {
       return;
     }
     if (expectedIssueKey && activeSession.jira_issue_key !== expectedIssueKey) {

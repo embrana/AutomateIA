@@ -2,6 +2,8 @@
 
 This is the reference for OpenSpec's slash commands. These commands are invoked in your AI coding assistant's chat interface (e.g., Claude Code, Cursor, Windsurf).
 
+This page uses the generic slash syntax (`/opsx:propose`). Some tools install the same workflows with hyphenated names instead, such as `/opsx-propose` in Codex and Cursor.
+
 For workflow patterns and when to use each command, see [Workflows](workflows.md). For CLI commands, see [CLI](cli.md).
 
 ## Quick Reference
@@ -51,6 +53,7 @@ Create a new change and generate planning artifacts in one step. This is the def
 - Creates `openspec/changes/<change-name>/`
 - Generates artifacts needed before implementation (for `spec-driven`: proposal, specs, design, tasks)
 - Stops when the change is ready for `/opsx:apply`
+- When an `osj` session is active, it prefers native `osj opsx ...` helpers so the created change is attached back to the session and timer blocks are tracked natively
 
 **Example:**
 ```text
@@ -67,6 +70,14 @@ AI:  Created openspec/changes/add-dark-mode/
 **Tips:**
 - Use this for the fastest end-to-end path
 - If you want step-by-step artifact control, enable expanded workflows and use `/opsx:new` + `/opsx:continue`
+- In the Jira/Tempo fork, the native helper sequence behind this flow is:
+
+```bash
+osj opsx track propose discovery --json
+osj opsx create-change <change-name>
+osj opsx track propose generation
+osj opsx track propose review
+```
 
 ---
 
@@ -90,6 +101,7 @@ Think through ideas, investigate problems, and clarify requirements before commi
 - Compares options and approaches
 - Creates visual diagrams to clarify thinking
 - Can transition to `/opsx:propose` (default) or `/opsx:new` (expanded workflow) when insights crystallize
+- When an `osj` session is active, it can surface the imported Jira ticket context and switch the timer block to `human_agent_interaction / spec`
 
 **Example:**
 ```text
@@ -121,6 +133,7 @@ AI:  Ready when you are. Run /opsx:propose add-jwt-auth to begin.
 - No artifacts are created during exploration
 - Good for comparing multiple approaches before deciding
 - Can read files and search the codebase
+- In the Jira/Tempo fork, the native helper behind this flow is `osj opsx track explore --json`
 
 ---
 

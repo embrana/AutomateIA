@@ -103,8 +103,9 @@ The current runtime slice already enforces these policy dimensions inside the `I
 - estimated diff size
 - high-risk path detection
 - autonomy level guard for code changes
+- runtime-managed blocking and escalation signals that feed approval requests
 
-Human approval objects and approval CLI are still future work.
+Approval artifacts and approval CLI are now implemented; archive approval is the most explicit delivered checkpoint today.
 
 ## Policy Matrix
 
@@ -118,6 +119,7 @@ Human approval objects and approval CLI are still future work.
 | Change touches auth/payments/migrations | require explicit approval before implementation or archive |
 | `tasks.md` incomplete but work time exists | preserve session/worklog evidence, block archive |
 | Jira sync fails after archive | move session to `SYNC_PENDING` and preserve closure evidence |
+| Session is `SYNC_PENDING` and OPSX wants to create a change | stop and require `osj archive --retry` or `osj timer cancel` first |
 | Repo is dirty or inconsistent in a way the runtime cannot classify | enter recovery flow |
 
 ## Approval Model
@@ -148,6 +150,16 @@ The repository now persists approval artifacts and exposes them through:
 - `osj approval reject <approval-id> --reason "..."`
 
 Archive approval is currently the most explicit delivered use case.
+
+The repository also exposes native OPSX session helpers that inherit the same governance model:
+
+- `osj opsx track explore --json`
+- `osj opsx track propose discovery --json`
+- `osj opsx create-change <name>`
+- `osj opsx track propose generation`
+- `osj opsx track propose review`
+
+These helpers make planning-time work visible in timer evidence by distinguishing collaborative `human_agent_interaction / spec` work from autonomous `ai_autonomous / spec` artifact generation.
 
 ### Approval Triggers
 
@@ -203,6 +215,8 @@ osj approval reject <approval-id> --reason "..."
 ```
 
 `osj runtime explain` should also surface why the runtime stopped, which policy triggered, and which evidence artifacts support the decision.
+
+For OPSX-driven planning flows, `osj runtime explain` should stay consistent with the `osj opsx ...` helpers so developers can see whether the runtime stopped because of paused state, `sync_pending`, policy budget, or approval gating.
 
 ## Risk Classification
 

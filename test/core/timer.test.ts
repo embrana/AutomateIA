@@ -17,6 +17,7 @@ import {
 import { getActiveSession, getSessionsDir, saveActiveSession } from '../../src/core/timer/store.js';
 import { buildAssignedTicketsJql, listAssignedTickets } from '../../src/core/timer/tickets.js';
 import { newChangeCommand } from '../../src/commands/workflow/new-change.js';
+import { createTrackedOpsxChange, trackOpsxWorkflow } from '../../src/commands/workflow/opsx.js';
 
 function jsonResponse(data: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(data), {
@@ -430,6 +431,129 @@ describe('OpenSpec Jira work timer', () => {
       name: 'proj-123-implement-from-session-workflow',
     });
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('tracks OPSX explore natively and exposes imported ticket context as JSON', async () => {
+    vi.setSystemTime(new Date('2026-04-19T17:03:11.000Z'));
+    fetchSpy.mockResolvedValueOnce(jsonResponse({
+      key: 'PROJ-123',
+      fields: {
+        summary: 'Explore imported Jira context',
+        status: { name: 'In Progress' },
+        assignee: { displayName: 'Emiliano' },
+        description: {
+          type: 'doc',
+          version: 1,
+          content: [
+            {
+              type: 'paragraph',
+              content: [{ type: 'text', text: 'Investigate the imported session context.' }],
+            },
+          ],
+        },
+      },
+    }));
+
+    await purpose('PROJ-123', { importTicket: true });
+    consoleLogSpy.mockClear();
+
+    const result = await trackOpsxWorkflow('explore', { json: true });
+
+    expect(consoleLogSpy).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(consoleLogSpy.mock.calls[0][0] as string)).toMatchObject({
+      workflow: 'explore',
+      phase: 'discovery',
+      session: {
+        found: true,
+        jira_issue_key: 'PROJ-123',
+        status: 'running',
+        tracking_applied: true,
+        target_block: {
+          mode: 'human_agent_interaction',
+          kind: 'spec',
+        },
+      },
+      ticket: {
+        key: 'PROJ-123',
+        summary: 'Explore imported Jira context',
+      },
+    });
+    expect(result.message).toContain('Tracked OPSX explore');
+
+    const session = await getActiveSession();
+    expect(session?.current_block).toMatchObject({
+      actor_mode: 'human_agent_interaction',
+      work_kind: 'spec',
+      description: 'OPSX explore discovery and requirement clarification',
+    });
+  });
+
+  it('creates a tracked OPSX change from a running session and restores collaborative propose tracking', async () => {
+    vi.setSystemTime(new Date('2026-04-19T17:03:11.000Z'));
+    fetchSpy.mockResolvedValueOnce(jsonResponse({
+      key: 'PROJ-123',
+      fields: {
+        summary: 'Create tracked OPSX change',
+        status: { name: 'In Progress' },
+        assignee: { displayName: 'Emiliano' },
+        description: {
+          type: 'doc',
+          version: 1,
+          content: [
+            {
+              type: 'paragraph',
+              content: [{ type: 'text', text: 'Create a tracked change from the active session.' }],
+            },
+          ],
+        },
+      },
+    }));
+
+    await purpose('PROJ-123', { importTicket: true });
+    await createTrackedOpsxChange('proj-123-create-tracked-opsx-change');
+
+    const session = await getActiveSession();
+    expect(session?.openspec_change).toMatchObject({
+      name: 'proj-123-create-tracked-opsx-change',
+    });
+    expect(session?.current_block).toMatchObject({
+      actor_mode: 'human_agent_interaction',
+      work_kind: 'spec',
+      description: 'OPSX propose discovery and artifact drafting',
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('creates a tracked OPSX change from a paused session and keeps the change attached to the runtime session', async () => {
+    vi.setSystemTime(new Date('2026-04-19T17:03:11.000Z'));
+    fetchSpy.mockResolvedValueOnce(jsonResponse({
+      key: 'PROJ-123',
+      fields: {
+        summary: 'Create tracked change from paused session',
+        status: { name: 'In Progress' },
+        assignee: { displayName: 'Emiliano' },
+        description: {
+          type: 'doc',
+          version: 1,
+          content: [
+            {
+              type: 'paragraph',
+              content: [{ type: 'text', text: 'Allow attaching a change while paused.' }],
+            },
+          ],
+        },
+      },
+    }));
+
+    await purpose('PROJ-123', { importTicket: true });
+    await pause();
+    await createTrackedOpsxChange('proj-123-create-tracked-change-while-paused');
+
+    const session = await getActiveSession();
+    expect(session?.status).toBe('paused');
+    expect(session?.openspec_change).toMatchObject({
+      name: 'proj-123-create-tracked-change-while-paused',
+    });
   });
 
   it('turns structured Jira SDD sections into a richer OpenSpec delta spec', async () => {

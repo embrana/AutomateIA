@@ -605,6 +605,8 @@ openspec/
 5. Specs now describe the new behavior
 6. Next change builds on updated specs
 
+On the Jira/Tempo fork, this flow can also be anchored to an active `osj` session. In that case, `/opsx:explore` and `/opsx:propose` reuse imported Jira ticket context and can switch native timer blocks through `osj opsx track ...` and `osj opsx create-change ...`.
+
 ## Glossary
 
 | Term | Definition |

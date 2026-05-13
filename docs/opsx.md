@@ -2,6 +2,8 @@
 
 > Feedback welcome on [Discord](https://discord.gg/YctCnvvshC).
 
+> Syntax note: this document uses the generic slash form (`/opsx:propose`). In Codex, Cursor, Windsurf, and similar tools, the installed command may appear as `/opsx-propose`.
+
 ## What Is It?
 
 OPSX is now the standard workflow for OpenSpec.
@@ -68,6 +70,30 @@ This creates skills in `.claude/skills/` (or equivalent) that AI coding assistan
 By default, OpenSpec uses the `core` workflow profile (`propose`, `explore`, `apply`, `archive`). If you want the expanded workflow commands (`new`, `continue`, `ff`, `verify`, `sync`, `bulk-archive`, `onboard`), configure them with `openspec config profile` and apply with `openspec update`.
 
 During setup, you'll be prompted to create a **project config** (`openspec/config.yaml`). This is optional but recommended.
+
+## OPSX With OSJ Sessions
+
+On this Jira/Tempo fork, OPSX can now cooperate with an active `osj` timer session instead of relying only on prompt instructions.
+
+When a session exists, the generated `/opsx:explore` and `/opsx:propose` prompts call native helpers:
+
+```bash
+osj opsx track explore --json
+osj opsx track propose discovery --json
+osj opsx create-change <change-name>
+osj opsx track propose generation
+osj opsx track propose review
+```
+
+These helpers make OPSX session-aware:
+
+- `explore` switches the active timer to `human_agent_interaction / spec` and exposes the imported Jira ticket as structured context
+- `propose discovery` marks the collaborative planning phase before artifacts are generated
+- `create-change` prefers session-aware change creation, attaching the created change back to the active session when possible
+- `propose generation` marks artifact generation as `ai_autonomous / spec`
+- `propose review` returns to `human_agent_interaction / spec` so the developer and AI can review the generated artifacts together
+
+If the active session is `sync_pending`, `osj opsx create-change` refuses to continue until you recover with `osj archive --retry` or discard with `osj timer cancel`.
 
 ## Project Configuration
 
@@ -157,8 +183,8 @@ rules:
 
 | Command | What it does |
 |---------|--------------|
-| `/opsx:propose` | Create a change and generate planning artifacts in one step (default quick path) |
-| `/opsx:explore` | Think through ideas, investigate problems, clarify requirements |
+| `/opsx:propose` | Create a change and generate planning artifacts in one step (default quick path); with `osj`, it also applies native session-aware tracking and change attachment |
+| `/opsx:explore` | Think through ideas, investigate problems, clarify requirements; with `osj`, it also exposes imported Jira ticket context and switches to `human_agent_interaction / spec` |
 | `/opsx:new` | Start a new change scaffold (expanded workflow) |
 | `/opsx:continue` | Create the next artifact (expanded workflow) |
 | `/opsx:ff` | Fast-forward planning artifacts (expanded workflow) |
@@ -177,11 +203,30 @@ rules:
 ```
 Think through ideas, investigate problems, compare options. No structure required - just a thinking partner. When insights crystallize, transition to `/opsx:propose` (default) or `/opsx:new`/`/opsx:ff` (expanded).
 
+If an `osj` session is active, the native helper behind this flow is:
+
+```bash
+osj opsx track explore --json
+```
+
+That command exposes the imported Jira ticket and, when the session is running, switches the timer block to `human_agent_interaction / spec`.
+
 ### Start a new change
 ```
 /opsx:propose
 ```
 Creates the change and generates planning artifacts needed before implementation.
+
+If an `osj` session is active, `/opsx:propose` now relies on this native sequence:
+
+```bash
+osj opsx track propose discovery --json
+osj opsx create-change <change-name>
+osj opsx track propose generation
+osj opsx track propose review
+```
+
+This sequence keeps the session and change formally linked, marks artifact generation as autonomous AI work, and returns the session to collaborative review mode afterward.
 
 If you've enabled expanded workflows, you can instead use:
 
