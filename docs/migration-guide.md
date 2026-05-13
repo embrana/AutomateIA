@@ -16,6 +16,8 @@ OPSX replaces the old phase-locked workflow with a fluid, action-based approach.
 
 **The philosophy change:** Work isn't linear. OPSX stops pretending it is.
 
+If you are using this Jira/Tempo fork, OPSX also gains native session-aware helpers: `/opsx:explore` and `/opsx:propose` can now reuse an active `osj` session through `osj opsx track ...` and `osj opsx create-change ...`.
+
 ---
 
 ## Before You Begin
@@ -302,6 +304,8 @@ Command availability is profile-dependent:
 | `/opsx:onboard` | Guided end-to-end onboarding workflow |
 
 Enable expanded commands with `openspec config profile`, then run `openspec update`.
+
+On this fork, if you already have an active Jira-backed session, `/opsx:explore` and `/opsx:propose` also gain native timer tracking and session-aware change attachment through `osj opsx ...`.
 
 ### Command Mapping from Legacy
 

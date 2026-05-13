@@ -23,6 +23,7 @@ The existing fork already provides the first runtime seams we need:
 - `src/core/timer/commands.ts` already models session lifecycle states like `running`, `paused`, `sync_pending`, and `closed`.
 - `src/core/archive.ts` provides governed archive behavior over OpenSpec changes.
 - `src/core/validation/validator.ts` provides a validation boundary we can wrap instead of replacing immediately.
+- `src/commands/workflow/opsx.ts` provides session-aware OPSX tracking and change creation helpers.
 - `src/cli/index.ts` is already the integration point for `purpose`, `timer`, `archive`, and future runtime commands.
 
 The runtime architecture below treats those modules as compatibility anchors and adds a formal multi-agent layer around them.
@@ -33,6 +34,8 @@ The repository has already landed the first visible runtime slice:
 
 - runtime state is formalized under `.openspec/runtime/`
 - session, ticket, and change state are bridged from the existing timer flow
+- `osj runtime explain` is available as a runtime inspection surface
+- native `osj opsx track ...` and `osj opsx create-change ...` helpers bridge generated `/opsx` workflows back into runtime-governed session state
 - `ContextAgent`, `SpecAgent`, and `PlanningAgent` are implemented
 - `ImplementationAgent`, `CriticAgent`, and `ValidationAgent` are implemented as runtime adapters
 - `ImplementationAgent` now supports provider-agnostic backend routing through API, local command, or manual handoff modes
@@ -43,7 +46,7 @@ What is not landed yet:
 
 - backend routing for the other agents
 - formal event bus and telemetry modules
-- richer runtime explanation and graph commands
+- runtime graph commands and full auto orchestration
 
 ## North Star
 
@@ -110,6 +113,19 @@ The new runtime store becomes the source of truth; the old timer files remain pr
 ### `SessionManager`
 
 Owns creation, loading, pausing, resuming, closing, and projection of runtime sessions. It also bridges the current timer session format to the new runtime format.
+
+### OPSX Session Bridge
+
+The generated `/opsx:explore` and `/opsx:propose` workflows should not bypass runtime governance when a Jira-backed session already exists.
+
+The current bridge is:
+
+- `/opsx:explore` -> `osj opsx track explore --json`
+- `/opsx:propose` -> `osj opsx track propose discovery --json`
+- `/opsx:propose` change creation -> `osj opsx create-change <name>`
+- `/opsx:propose` generation/review phases -> `osj opsx track propose generation|review`
+
+This keeps prompt-driven UX while moving timer classification, imported-ticket reuse, and session/change linkage into the CLI/runtime boundary instead of leaving them as prompt-only conventions.
 
 ### `StateEngine`
 
@@ -282,12 +298,15 @@ The runtime should preserve existing `osj` flows and add new surfaces gradually:
 - `osj timer start|pause|resume|switch|status|report|bugfix|cancel`
 - `osj archive`
 - `osj validate`
+- generated `/opsx:*` workflows as the chat-facing interface layer
 
 ### Add
 
 - `osj runtime status`
-- `osj runtime graph`
 - `osj runtime explain`
+- `osj runtime graph`
+- `osj opsx track <workflow> [phase]`
+- `osj opsx create-change [name]`
 - `osj agent run <agent>`
 - `osj orchestrate --from-session`
 - `osj orchestrate --until <stage>`
@@ -297,6 +316,8 @@ The runtime should preserve existing `osj` flows and add new surfaces gradually:
 ### CLI Design Rule
 
 Early phases should implement runtime commands as read-heavy and explanation-heavy before introducing fully automatic orchestration. This keeps the system observable while the state model stabilizes.
+
+OPSX chat workflows should prefer thin wrappers over these CLI/runtime commands instead of re-implementing timer, ticket, or archive semantics in prompt text.
 
 ## What This Architecture Intentionally Does Not Do
 

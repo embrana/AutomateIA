@@ -20,6 +20,8 @@ OpenSpec helps you and your AI coding assistant agree on what to build before an
 
 The default global profile is `core`, which includes `propose`, `explore`, `apply`, and `archive`. You can enable the expanded workflow commands with `openspec config profile` and then `openspec update`.
 
+On this Jira/Tempo fork, if you already have an active `osj` session, `/opsx:explore` and `/opsx:propose` also reuse the imported Jira ticket and apply native timer governance through `osj opsx track ...` and `osj opsx create-change ...`.
+
 ## What OpenSpec Creates
 
 After running `openspec init`, your project has this structure:
@@ -131,6 +133,15 @@ AI:  Created openspec/changes/add-dark-mode/
      ✓ design.md    — technical approach
      ✓ tasks.md     — implementation checklist
      Ready for implementation!
+```
+
+With an active `osj` session, the same flow is backed by native helpers:
+
+```bash
+osj opsx track propose discovery --json
+osj opsx create-change add-dark-mode
+osj opsx track propose generation
+osj opsx track propose review
 ```
 
 If you've enabled the expanded workflow profile, you can also do this as two steps: `/opsx:new` then `/opsx:ff` (or `/opsx:continue` incrementally).

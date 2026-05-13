@@ -4,7 +4,7 @@ import { AI_TOOLS } from './config.js';
 import type { Delivery } from './global-config.js';
 import { ALL_WORKFLOWS } from './profiles.js';
 import { CommandAdapterRegistry } from './command-generation/index.js';
-import { COMMAND_IDS, getConfiguredTools } from './shared/index.js';
+import { getConfiguredTools, getManagedCommandIdsForTool, getManagedSkillEntriesForTool } from './shared/index.js';
 
 type WorkflowId = (typeof ALL_WORKFLOWS)[number];
 
@@ -39,7 +39,7 @@ export function toolHasAnyConfiguredCommand(projectPath: string, toolId: string)
   const adapter = CommandAdapterRegistry.get(toolId);
   if (!adapter) return false;
 
-  for (const commandId of COMMAND_IDS) {
+  for (const commandId of getManagedCommandIdsForTool(toolId, ALL_WORKFLOWS)) {
     const cmdPath = adapter.getFilePath(commandId);
     const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
     if (fs.existsSync(fullPath)) {
@@ -102,8 +102,14 @@ export function hasToolProfileOrDeliveryDrift(
   const shouldGenerateCommands = delivery !== 'skills';
 
   if (shouldGenerateSkills) {
-    for (const workflow of knownDesiredWorkflows) {
-      const dirName = WORKFLOW_TO_SKILL_DIR[workflow];
+    const desiredSkillEntries = getManagedSkillEntriesForTool(toolId, knownDesiredWorkflows);
+    const desiredSkillDirSet = new Set(desiredSkillEntries.map((entry) => entry.dirName));
+    const allManagedSkillDirNames = new Set([
+      ...Object.values(WORKFLOW_TO_SKILL_DIR),
+      ...getManagedSkillEntriesForTool(toolId, ALL_WORKFLOWS).map((entry) => entry.dirName),
+    ]);
+
+    for (const dirName of desiredSkillDirSet) {
       const skillFile = path.join(skillsDir, dirName, 'SKILL.md');
       if (!fs.existsSync(skillFile)) {
         return true;
@@ -111,9 +117,8 @@ export function hasToolProfileOrDeliveryDrift(
     }
 
     // Deselecting workflows in a profile should trigger sync.
-    for (const workflow of ALL_WORKFLOWS) {
-      if (desiredWorkflowSet.has(workflow)) continue;
-      const dirName = WORKFLOW_TO_SKILL_DIR[workflow];
+    for (const dirName of allManagedSkillDirNames) {
+      if (desiredSkillDirSet.has(dirName)) continue;
       const skillDir = path.join(skillsDir, dirName);
       if (fs.existsSync(skillDir)) {
         return true;
@@ -130,8 +135,12 @@ export function hasToolProfileOrDeliveryDrift(
   }
 
   if (shouldGenerateCommands && adapter) {
-    for (const workflow of knownDesiredWorkflows) {
-      const cmdPath = adapter.getFilePath(workflow);
+    const desiredCommandIds = getManagedCommandIdsForTool(toolId, knownDesiredWorkflows);
+    const desiredCommandSet = new Set(desiredCommandIds);
+    const allManagedCommandIds = getManagedCommandIdsForTool(toolId, ALL_WORKFLOWS);
+
+    for (const commandId of desiredCommandIds) {
+      const cmdPath = adapter.getFilePath(commandId);
       const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
       if (!fs.existsSync(fullPath)) {
         return true;
@@ -139,17 +148,17 @@ export function hasToolProfileOrDeliveryDrift(
     }
 
     // Deselecting workflows in a profile should trigger sync.
-    for (const workflow of ALL_WORKFLOWS) {
-      if (desiredWorkflowSet.has(workflow)) continue;
-      const cmdPath = adapter.getFilePath(workflow);
+    for (const commandId of allManagedCommandIds) {
+      if (desiredCommandSet.has(commandId)) continue;
+      const cmdPath = adapter.getFilePath(commandId);
       const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
       if (fs.existsSync(fullPath)) {
         return true;
       }
     }
   } else if (!shouldGenerateCommands && adapter) {
-    for (const workflow of ALL_WORKFLOWS) {
-      const cmdPath = adapter.getFilePath(workflow);
+    for (const commandId of getManagedCommandIdsForTool(toolId, ALL_WORKFLOWS)) {
+      const cmdPath = adapter.getFilePath(commandId);
       const fullPath = path.isAbsolute(cmdPath) ? cmdPath : path.join(projectPath, cmdPath);
       if (fs.existsSync(fullPath)) {
         return true;

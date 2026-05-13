@@ -283,6 +283,11 @@ describe('command-generation/adapters', () => {
       expect(filePath).toMatch(/prompts[/\\]opsx-explore\.md$/);
     });
 
+    it('should generate /osj companion prompts without the opsx prefix', () => {
+      const filePath = codexAdapter.getFilePath('osj-runtime-status');
+      expect(filePath).toMatch(/prompts[/\\]osj-runtime-status\.md$/);
+    });
+
     it('should default to homedir/.codex', () => {
       const original = process.env.CODEX_HOME;
       delete process.env.CODEX_HOME;

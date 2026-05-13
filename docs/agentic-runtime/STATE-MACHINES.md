@@ -118,6 +118,7 @@ stateDiagram-v2
 
 - `AWAITING_HUMAN` is new and becomes the runtime equivalent of "stop autonomous progress here".
 - `SYNC_PENDING` must preserve enough state to retry Jira worklog/comment sync without losing work blocks or archive evidence.
+- Native OPSX helper-driven block switches (`osj opsx track ...`) are compatibility-preserving transitions inside the `ACTIVE -> SWITCHING_BLOCK -> ACTIVE` path; they do not create a separate session state.
 
 ## 3. Change Runtime State
 
@@ -226,6 +227,7 @@ These invariants should be enforced in `StateEngine`:
 5. `SYNC_PENDING` can coexist with ticket `ARCHIVED` only when archive succeeded but Jira sync failed afterward.
 6. A cycle in `FAILED_ESCALATED` requires an approval or escalation artifact before orchestration can continue.
 7. `AgentRun.REJECTED` and `AgentRun.SKIPPED` must still emit events so the decision trail remains complete.
+8. `osj opsx create-change` must not create or attach a change when the session runtime is `SYNC_PENDING`.
 
 ## Transition Guards
 
@@ -237,6 +239,8 @@ Minimum guards to implement from day one:
 | `PLANNED -> IN_EXECUTION` | no blocking approval is pending |
 | `UNDER_REVIEW -> READY_FOR_ARCHIVE` | validation passed and required tasks are complete |
 | `ACTIVE -> SYNC_PENDING` | at least one Jira sync side effect failed after close/archive attempt |
+| `ACTIVE -> SWITCHING_BLOCK` | active session is running and target block change is allowed by policy |
+| `NOT_CREATED -> DRAFTED` | if the change is being created from an active session, that session must not be `SYNC_PENDING` |
 | `VALIDATING -> FAILED_RETRYABLE` | failure classification is retryable and retry budget remains |
 | `VALIDATING -> FAILED_ESCALATED` | failure classification requires human decision or budget is exhausted |
 
@@ -249,6 +253,7 @@ Every state transition should emit one event. At minimum:
 - `SESSION_PAUSED`
 - `SESSION_RESUMED`
 - `BLOCK_SWITCHED`
+- `OPSX_TRACKED`
 - `CHANGE_CREATED`
 - `CONTEXT_NORMALIZED`
 - `SPEC_GENERATED`

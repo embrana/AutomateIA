@@ -1,6 +1,6 @@
 # CLI Reference
 
-The OpenSpec CLI (`openspec`) provides terminal commands for project setup, validation, status inspection, and management. These commands complement the AI slash commands (like `/opsx:propose`) documented in [Commands](commands.md).
+The OpenSpec CLI (`openspec`) provides terminal commands for project setup, validation, status inspection, and management. These commands complement the AI slash commands (like `/opsx:propose`, or `/opsx-propose` in Codex-style tools) documented in [Commands](commands.md).
 
 > Note: this Jira/Tempo fork installs a separate binary named `osj` so it can coexist with the official `openspec` package. When using this fork, run the same commands with `osj` in place of `openspec`.
 
@@ -13,6 +13,7 @@ The OpenSpec CLI (`openspec`) provides terminal commands for project setup, vali
 | **Validation** | `validate` | Check changes and specs for issues |
 | **Lifecycle** | `archive` | Finalize completed changes |
 | **Timer** | `purpose`, `timer` | Track local work time and sync Jira worklogs |
+| **OPSX Session Helpers** | `opsx track`, `opsx create-change` | Native session-aware tracking for `/opsx:explore` and `/opsx:propose` |
 | **Workflow** | `status`, `instructions`, `templates`, `schemas` | Artifact-driven workflow support |
 | **Schemas** | `schema init`, `schema fork`, `schema validate`, `schema which` | Create and manage custom workflows |
 | **Config** | `config` | View and modify settings |
@@ -129,6 +130,22 @@ openspec/
 .cursor/commands/       # Cursor OPSX commands (if delivery includes commands)
 ... (other tool configs)
 ```
+
+For Codex specifically, `osj init` / `osj update` now install:
+
+- the normal `opsx-*` workflow prompts
+- companion `osj-*` prompts for common session work, including:
+  - `/osj-purpose-start`
+  - `/osj-ticket-show`
+  - `/osj-tickets`
+  - `/osj-runtime-status`
+  - `/osj-runtime-explain`
+  - `/osj-timer-report`
+  - `/osj-timer-cancel`
+  - `/osj-archive-retry`
+  - `/osj-approval-show`
+
+The generated `/opsx-explore` and `/opsx-propose` prompts also use the native `osj opsx ...` helpers when an active Jira-backed session exists.
 
 ---
 
@@ -393,6 +410,29 @@ openspec/changes/<change-name>/
 
 The initial delta spec is built from the Jira description. If the description already contains OpenSpec delta sections such as `## ADDED Requirements`, OpenSpec writes it as-is. If the description contains structured SDD sections such as `## Acceptance Criteria`, `## Business Rules`, `## Domain / Data / Integration Contracts`, `## UX / Error States`, or `## Out of Scope`, OpenSpec creates a richer requirement and turns acceptance criteria headings like `### CA-1 — ...`, `### CA-1 - ...`, or `### CA-1: ...` into OpenSpec scenarios. The structured importer also accepts Spanish section aliases such as `## Contexto`, `## Objetivos`, `## Criterios de aceptación`, `## Reglas de negocio`, `## Estados de UX / Error`, `## Fuera de alcance`, and `## Trazabilidad`.
 
+### `openspec ticket show`
+
+Show the Jira ticket context imported into the active session.
+
+```
+openspec ticket show [--json]
+```
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output imported ticket context as JSON |
+
+**Examples:**
+
+```bash
+openspec ticket show
+openspec ticket show --json
+```
+
+This command reads the imported Jira context from the active timer session. If the current session was not started with `--import-ticket`, it explains that no imported ticket context is available.
+
 ### `openspec timer`
 
 Inspect or cancel the active work timer.
@@ -414,6 +454,38 @@ openspec timer <subcommand>
 openspec timer status
 openspec timer cancel
 ```
+
+### `openspec opsx`
+
+Native OPSX session helpers used by the Jira/Tempo fork when `/opsx:explore` and `/opsx:propose` run against an active `osj` session.
+
+```
+openspec opsx <subcommand>
+```
+
+**Subcommands:**
+
+| Subcommand | Description |
+|------------|-------------|
+| `track <workflow> [phase]` | Switch the active timer block for an OPSX workflow and expose imported Jira ticket context |
+| `create-change [name]` | Create a change with session-aware governance and attach it back to the active session when possible |
+
+**Examples:**
+
+```bash
+openspec opsx track explore --json
+openspec opsx track propose discovery --json
+openspec opsx create-change add-dark-mode
+openspec opsx track propose generation
+openspec opsx track propose review
+```
+
+**What it does:**
+
+1. Reuses the imported Jira ticket from the active session as structured OPSX context
+2. Switches timer blocks natively between `human_agent_interaction / spec` and `ai_autonomous / spec`
+3. Refuses session-aware change creation when the active session is `sync_pending`
+4. Attaches the created change back to the active session when the session is running or paused
 
 ---
 
@@ -506,11 +578,13 @@ openspec new change --from-ticket PROJ-123
 openspec new change custom-name --from-ticket PROJ-123
 ```
 
+On this fork, `osj new change --from-session` still exists as a low-level helper when you want to create artifacts directly from the active Jira session. For the native OPSX-backed flow behind `/opsx:propose`, prefer `osj opsx create-change <name>`.
+
 ---
 
 ## Workflow Commands
 
-These commands support the artifact-driven OPSX workflow. They're useful for both humans checking progress and agents determining next steps.
+These commands support the artifact-driven OPSX workflow. They're useful for both humans checking progress and agents determining next steps. In the Jira/Tempo fork, they complement the `openspec opsx ...` session helpers described above.
 
 ### `openspec status`
 

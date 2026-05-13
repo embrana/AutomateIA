@@ -38,7 +38,7 @@ This backlog turns the architecture into a phased implementation plan for Codex.
   - backend name and mode
   - current phase, for example `reasoning`, `editing files`, or `running tests`
   - the current cycle id
-- `osj runtime status` and future `osj runtime explain` should stay aligned with that guidance so developers are never left with an empty terminal and no explanation.
+- `osj runtime status` and `osj runtime explain` should stay aligned with that guidance so developers are never left with an empty terminal and no explanation.
 - `osj runtime explain` should distinguish policy-budget escalations from generic cycle failures.
 - When an implementation or critic cycle is cut off by diff/file-count policy, the explanation should include:
   - the measured value, for example `estimated diff size 1032`
@@ -51,12 +51,26 @@ This backlog turns the architecture into a phased implementation plan for Codex.
   - approval reasons
   - critic and validation summaries
   - future terminal summaries emitted by `osj orchestrate`
+- The generated `/opsx-explore` and `/opsx-propose` prompts should continue calling the native `osj opsx ...` helpers so session-aware tracking and Jira-ticket reuse stay centralized in the CLI/runtime layer.
+- The `osj opsx ...` helpers should keep producing enough structured output for prompt-based tools to explain:
+  - current session state
+  - imported Jira ticket context
+  - whether tracking was actually applied
+  - whether session-aware change creation is allowed
 - The autonomous diff/file-count budget should be configurable per environment or per run so larger but still valid features do not always require manual overrides.
 - At minimum, the runtime should support one of these paths:
   - global config for `max_diff_lines_without_human_review` and related thresholds
   - per-profile policy levels such as `strict`, `standard`, and `large_feature`
   - explicit CLI override for a single run, with the chosen budget persisted in runtime artifacts for traceability
 - `osj runtime explain` and approval artifacts should surface the active policy profile or configured budget so developers understand why a feature was gated.
+- Codex should continue exposing more `osj` flows directly in the IDE, but they should keep landing as thin wrappers over the CLI:
+  - `/osj-timer-switch`
+  - `/osj-orchestrate-*`
+  - `/osj-approval-accept`
+  - `/osj-approval-reject`
+  - `/osj-archive`
+- Several companion prompts already exist, including `/osj-purpose-start`, `/osj-ticket-show`, `/osj-runtime-status`, `/osj-runtime-explain`, `/osj-timer-report`, `/osj-timer-cancel`, and `/osj-archive-retry`.
+- Those `/osj-*` wrappers should keep `osj` as the real backend so timer, worklog, approval, archive, and OPSX session-governance logic stays centralized in the CLI instead of being reimplemented in prompt text.
 
 ## Status Snapshot
 
@@ -67,6 +81,7 @@ Current repository status after the first seven runtime PRs:
 - Phase 3 is implemented as a bounded `ImplementationAgent` adapter with pluggable backend routing and runtime-controlled local workspace execution.
 - Phase 4 is partially implemented through current `CriticAgent`, `ValidationAgent`, cycle persistence, and failure classification.
 - Phase 5 is partially implemented through `DeliveryAgent`, approvals, and archive governance.
+- OPSX session-aware CLI helpers are implemented as a governance bridge between chat workflows and runtime state.
 - Phase 6 remains future work.
 
 ## Phase 1. Runtime Formalization

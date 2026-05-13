@@ -1,8 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import {
   getSkillTemplates,
+  getSkillTemplatesForTool,
   getCommandTemplates,
   getCommandContents,
+  getCommandContentsForTool,
+  getManagedSkillEntriesForTool,
+  getManagedCommandIdsForTool,
   generateSkillContent,
 } from '../../../src/core/shared/skill-generation.js';
 
@@ -84,6 +88,138 @@ describe('skill-generation', () => {
       expect(filtered).toHaveLength(1);
       expect(filtered[0].workflowId).toBe('propose');
       expect(filtered[0].dirName).toBe('openspec-propose');
+    });
+
+    it('should add Codex-only /osj companion skills for the codex tool', () => {
+      const templates = getSkillTemplatesForTool('codex', ['explore']);
+      const dirNames = templates.map((entry) => entry.dirName);
+
+      expect(dirNames).toContain('openspec-explore');
+      expect(dirNames).toContain('openspec-osj-archive-retry');
+      expect(dirNames).toContain('openspec-osj-archive-session');
+      expect(dirNames).toContain('openspec-osj-timer-cancel');
+      expect(dirNames).toContain('openspec-osj-ticket-show');
+      expect(dirNames).toContain('openspec-osj-tickets');
+      expect(dirNames).toContain('openspec-osj-purpose-start');
+      expect(dirNames).toContain('openspec-osj-runtime-status');
+      expect(dirNames).toContain('openspec-osj-runtime-explain');
+      expect(dirNames).toContain('openspec-osj-approval-show');
+      expect(dirNames).toContain('openspec-osj-timer-report');
+    });
+
+    it('should expose managed skill entries for codex', () => {
+      expect(getManagedSkillEntriesForTool('codex', ['explore']).map((entry) => entry.dirName)).toEqual([
+        'openspec-explore',
+        'openspec-osj-archive-retry',
+        'openspec-osj-archive-session',
+        'openspec-osj-timer-cancel',
+        'openspec-osj-ticket-show',
+        'openspec-osj-tickets',
+        'openspec-osj-purpose-start',
+        'openspec-osj-runtime-status',
+        'openspec-osj-runtime-explain',
+        'openspec-osj-approval-show',
+        'openspec-osj-timer-report',
+      ]);
+    });
+
+    it('should give Codex /osj companion skills a structured non-narrative response contract', () => {
+      const runtimeStatusSkill = getSkillTemplatesForTool('codex', ['explore'])
+        .find((entry) => entry.dirName === 'openspec-osj-runtime-status');
+
+      expect(runtimeStatusSkill?.template.instructions).toContain('**Response format**');
+      expect(runtimeStatusSkill?.template.instructions).toContain('**Status**');
+      expect(runtimeStatusSkill?.template.instructions).toContain('**Conclusion**');
+      expect(runtimeStatusSkill?.template.instructions).toContain('**State conflicts**');
+      expect(runtimeStatusSkill?.template.instructions).toContain('**Next step**');
+      expect(runtimeStatusSkill?.template.instructions).toContain('Do not narrate execution');
+      expect(runtimeStatusSkill?.template.instructions).toContain('Do not mention the helper, prompt, or skill implementation details.');
+    });
+
+    it('should give Codex /osj-purpose-start skill a list-or-start contract', () => {
+      const purposeStartSkill = getSkillTemplatesForTool('codex', ['explore'])
+        .find((entry) => entry.dirName === 'openspec-osj-purpose-start');
+
+      expect(purposeStartSkill?.template.instructions).toContain('If no Jira issue key or `--jira` argument is present:');
+      expect(purposeStartSkill?.template.instructions).toContain('run `osj tickets --json`');
+      expect(purposeStartSkill?.template.instructions).toContain('build `osj purpose --jira REB-234 --import-ticket`');
+      expect(purposeStartSkill?.template.instructions).toContain('**Command**');
+      expect(purposeStartSkill?.template.instructions).toContain('Never guess a Jira issue key.');
+      expect(purposeStartSkill?.template.instructions).toContain('retry once with escalated permissions');
+    });
+
+    it('should tell the Codex /osj-tickets skill to retry Jira fetches with escalated permissions', () => {
+      const ticketsSkill = getSkillTemplatesForTool('codex', ['explore'])
+        .find((entry) => entry.dirName === 'openspec-osj-tickets');
+
+      expect(ticketsSkill?.template.instructions).toContain('`fetch failed` style error');
+      expect(ticketsSkill?.template.instructions).toContain('retry once with escalated permissions');
+    });
+
+    it('should make the Codex /osj-archive-session skill stop when an active change is still attached', () => {
+      const archiveSessionSkill = getSkillTemplatesForTool('codex', ['explore'])
+        .find((entry) => entry.dirName === 'openspec-osj-archive-session');
+
+      expect(archiveSessionSkill?.template.instructions).toContain('Inspect the current runtime first with `osj runtime status`');
+      expect(archiveSessionSkill?.template.instructions).toContain('If the active session still references a non-archived change, do not run `osj archive`.');
+      expect(archiveSessionSkill?.template.instructions).toContain('Never use it to archive an active change.');
+      expect(archiveSessionSkill?.template.instructions).toContain('If the first archive attempt leaves the session in `sync_pending`, prefer `osj archive --retry` as the next step.');
+    });
+
+    it('should make the Codex /osj-archive-retry skill focus on sync_pending recovery', () => {
+      const archiveRetrySkill = getSkillTemplatesForTool('codex', ['explore'])
+        .find((entry) => entry.dirName === 'openspec-osj-archive-retry');
+
+      expect(archiveRetrySkill?.template.instructions).toContain('default: `osj archive --retry`');
+      expect(archiveRetrySkill?.template.instructions).toContain('This helper is only for retrying a pending Jira sync.');
+      expect(archiveRetrySkill?.template.instructions).toContain('prefer `osj timer cancel` only when the CLI indicates discard is the remaining safe path.');
+    });
+
+    it('should make the Codex /osj-timer-cancel skill call out sync_pending discard risk', () => {
+      const timerCancelSkill = getSkillTemplatesForTool('codex', ['explore'])
+        .find((entry) => entry.dirName === 'openspec-osj-timer-cancel');
+
+      expect(timerCancelSkill?.template.instructions).toContain('Inspect the current runtime first with `osj runtime status`');
+      expect(timerCancelSkill?.template.instructions).toContain('`osj timer cancel`');
+      expect(timerCancelSkill?.template.instructions).toContain('cancel discards the pending unsynced Jira worklog instead of retrying it');
+      expect(timerCancelSkill?.template.instructions).toContain('cancel does not archive that change');
+    });
+
+    it('should make the Codex /osj-ticket-show skill expose imported ticket content from the active session', () => {
+      const ticketShowSkill = getSkillTemplatesForTool('codex', ['explore'])
+        .find((entry) => entry.dirName === 'openspec-osj-ticket-show');
+
+      expect(ticketShowSkill?.template.instructions).toContain('default: `osj ticket show --json`');
+      expect(ticketShowSkill?.template.instructions).toContain('description text');
+      expect(ticketShowSkill?.template.instructions).toContain('no imported Jira ticket context');
+    });
+
+    it('should make opsx explore reuse osj session context and collaborative spec tracking', () => {
+      const exploreSkill = getSkillTemplates(['explore']).find((entry) => entry.dirName === 'openspec-explore');
+
+      expect(exploreSkill?.template.instructions).toContain('osj opsx track explore --json');
+      expect(exploreSkill?.template.instructions).toContain('source of truth');
+      expect(exploreSkill?.template.instructions).toContain('human_agent_interaction / spec');
+      expect(exploreSkill?.template.instructions).toContain('primary discovery input');
+    });
+
+    it('should make opsx propose prefer session-aware change creation and explicit spec block tracking', () => {
+      const proposeSkill = getSkillTemplates(['propose']).find((entry) => entry.dirName === 'openspec-propose');
+
+      expect(proposeSkill?.template.instructions).toContain('osj opsx track propose discovery --json');
+      expect(proposeSkill?.template.instructions).toContain('osj opsx create-change "<name>"');
+      expect(proposeSkill?.template.instructions).toContain('hard-wires the correct governance behavior');
+      expect(proposeSkill?.template.instructions).toContain('osj opsx track propose generation');
+      expect(proposeSkill?.template.instructions).toContain('osj opsx track propose review');
+    });
+
+    it('should make read-only /osj helpers execute only their own exact command', () => {
+      const timerReportSkill = getSkillTemplatesForTool('codex', ['explore'])
+        .find((entry) => entry.dirName === 'openspec-osj-timer-report');
+
+      expect(timerReportSkill?.template.instructions).toContain('Run only the exact CLI command defined for this helper.');
+      expect(timerReportSkill?.template.instructions).toContain("Do not execute any other `osj` command or any other `/osj-*` helper on the user's behalf.");
+      expect(timerReportSkill?.template.instructions).toContain('If another command would help, mention it only in **Next step**.');
     });
   });
 
@@ -181,6 +317,119 @@ describe('skill-generation', () => {
       const all = getCommandContents();
       const noFilter = getCommandContents(undefined);
       expect(noFilter).toHaveLength(all.length);
+    });
+
+    it('should add Codex-only /osj companion commands for the codex tool', () => {
+      const contents = getCommandContentsForTool('codex', ['explore', 'apply']);
+      const ids = contents.map((content) => content.id);
+
+      expect(ids).toContain('explore');
+      expect(ids).toContain('apply');
+      expect(ids).toContain('osj-archive-retry');
+      expect(ids).toContain('osj-archive-session');
+      expect(ids).toContain('osj-timer-cancel');
+      expect(ids).toContain('osj-ticket-show');
+      expect(ids).toContain('osj-tickets');
+      expect(ids).toContain('osj-purpose-start');
+      expect(ids).toContain('osj-runtime-status');
+      expect(ids).toContain('osj-runtime-explain');
+      expect(ids).toContain('osj-approval-show');
+      expect(ids).toContain('osj-timer-report');
+    });
+
+    it('should not add /osj companion commands for non-codex tools', () => {
+      const contents = getCommandContentsForTool('claude', ['explore', 'apply']);
+      const ids = contents.map((content) => content.id);
+
+      expect(ids).toContain('explore');
+      expect(ids).toContain('apply');
+      expect(ids.some((id) => id.startsWith('osj-'))).toBe(false);
+    });
+
+    it('should expose managed command ids for codex', () => {
+      expect(getManagedCommandIdsForTool('codex', ['explore'])).toEqual([
+        'explore',
+        'osj-archive-retry',
+        'osj-archive-session',
+        'osj-timer-cancel',
+        'osj-ticket-show',
+        'osj-tickets',
+        'osj-purpose-start',
+        'osj-runtime-status',
+        'osj-runtime-explain',
+        'osj-approval-show',
+        'osj-timer-report',
+      ]);
+    });
+
+    it('should keep Codex /osj prompts minimal and skill-backed', () => {
+      const runtimeStatus = getCommandContentsForTool('codex', ['explore'])
+        .find((content) => content.id === 'osj-runtime-status');
+
+      expect(runtimeStatus?.body).toContain('openspec-osj-runtime-status');
+      expect(runtimeStatus?.body).not.toContain('**Steps**');
+      expect(runtimeStatus?.body).not.toContain('**Guardrails**');
+    });
+
+    it('should keep the Codex /osj-purpose-start prompt minimal and skill-backed', () => {
+      const purposeStart = getCommandContentsForTool('codex', ['explore'])
+        .find((content) => content.id === 'osj-purpose-start');
+
+      expect(purposeStart?.body).toContain('openspec-osj-purpose-start');
+      expect(purposeStart?.body).toContain('osj tickets --json');
+      expect(purposeStart?.body).not.toContain('**Steps**');
+      expect(purposeStart?.body).not.toContain('**Guardrails**');
+    });
+
+    it('should keep the Codex /osj-archive-session prompt minimal and skill-backed', () => {
+      const archiveSession = getCommandContentsForTool('codex', ['explore'])
+        .find((content) => content.id === 'osj-archive-session');
+
+      expect(archiveSession?.body).toContain('openspec-osj-archive-session');
+      expect(archiveSession?.body).toContain('osj archive --comment "Implementation session"');
+      expect(archiveSession?.body).not.toContain('**Steps**');
+      expect(archiveSession?.body).not.toContain('**Guardrails**');
+    });
+
+    it('should keep the Codex /osj-archive-retry prompt minimal and skill-backed', () => {
+      const archiveRetry = getCommandContentsForTool('codex', ['explore'])
+        .find((content) => content.id === 'osj-archive-retry');
+
+      expect(archiveRetry?.body).toContain('openspec-osj-archive-retry');
+      expect(archiveRetry?.body).toContain('osj archive --retry');
+      expect(archiveRetry?.body).not.toContain('**Steps**');
+      expect(archiveRetry?.body).not.toContain('**Guardrails**');
+    });
+
+    it('should keep the Codex /osj-timer-cancel prompt minimal and skill-backed', () => {
+      const timerCancel = getCommandContentsForTool('codex', ['explore'])
+        .find((content) => content.id === 'osj-timer-cancel');
+
+      expect(timerCancel?.body).toContain('openspec-osj-timer-cancel');
+      expect(timerCancel?.body).toContain('osj timer cancel');
+      expect(timerCancel?.body).not.toContain('**Steps**');
+      expect(timerCancel?.body).not.toContain('**Guardrails**');
+    });
+
+    it('should keep the Codex /osj-ticket-show prompt minimal and skill-backed', () => {
+      const ticketShow = getCommandContentsForTool('codex', ['explore'])
+        .find((content) => content.id === 'osj-ticket-show');
+
+      expect(ticketShow?.body).toContain('openspec-osj-ticket-show');
+      expect(ticketShow?.body).toContain('osj ticket show --json');
+      expect(ticketShow?.body).not.toContain('**Steps**');
+      expect(ticketShow?.body).not.toContain('**Guardrails**');
+    });
+
+    it('should expose session-aware osj tracking guidance in the opsx explore and propose prompts', () => {
+      const explore = getCommandContents(['explore']).find((content) => content.id === 'explore');
+      const propose = getCommandContents(['propose']).find((content) => content.id === 'propose');
+
+      expect(explore?.body).toContain('osj opsx track explore --json');
+      expect(propose?.body).toContain('osj opsx track propose discovery --json');
+      expect(propose?.body).toContain('osj opsx create-change "<name>"');
+      expect(propose?.body).toContain('osj opsx track propose generation');
+      expect(propose?.body).toContain('osj opsx track propose review');
     });
   });
 

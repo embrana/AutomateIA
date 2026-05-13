@@ -85,6 +85,18 @@ export interface TimerReportOptions {
   comment?: string;
 }
 
+export interface ShowImportedTicketOptions {
+  json?: boolean;
+}
+
+export interface ImportedTicketView {
+  found: boolean;
+  reason: 'ok' | 'no_active_session' | 'no_imported_ticket';
+  message: string;
+  jira_issue_key: string | null;
+  ticket: ImportedJiraTicket | null;
+}
+
 interface WorklogGroup {
   block_key: string;
   actor_mode: TimerActorMode;
@@ -495,10 +507,10 @@ export async function purpose(issueKey: string, options: PurposeOptions = {}): P
 
   const existing = await getActiveSession();
   if (existing?.status === 'running' || existing?.status === 'paused') {
-    throw new Error("There is already an active OpenSpec session.\nUse 'openspec archive' or 'openspec timer cancel'.");
+    throw new Error("There is already an active OpenSpec session.\nUse 'osj archive' or 'osj timer cancel'.");
   }
   if (existing?.status === 'sync_pending') {
-    throw new Error("There is a pending OpenSpec worklog sync.\nUse 'openspec archive --retry' or 'openspec timer cancel'.");
+    throw new Error("There is a pending OpenSpec worklog sync.\nUse 'osj archive --retry' or 'osj timer cancel'.");
   }
 
   const config = getTimerConfig();
@@ -574,10 +586,10 @@ export async function startManualHumanTimer(
 
   const existing = await getActiveSession();
   if (existing?.status === 'running' || existing?.status === 'paused') {
-    throw new Error("There is already an active OpenSpec session.\nUse 'openspec archive' or 'openspec timer cancel'.");
+    throw new Error("There is already an active OpenSpec session.\nUse 'osj archive' or 'osj timer cancel'.");
   }
   if (existing?.status === 'sync_pending') {
-    throw new Error("There is a pending OpenSpec worklog sync.\nUse 'openspec archive --retry' or 'openspec timer cancel'.");
+    throw new Error("There is a pending OpenSpec worklog sync.\nUse 'osj archive --retry' or 'osj timer cancel'.");
   }
 
   const config = getTimerConfig();
@@ -653,9 +665,6 @@ export async function archiveTimer(options: ArchiveTimerOptions = {}): Promise<T
     const recoveredSession = await recoverPreviouslyClosedSyncPendingSession(session);
     if (recoveredSession) {
       return recoveredSession;
-    }
-    if (!options.retry) {
-      throw new Error("OpenSpec session is pending Jira sync.\nUse 'openspec archive --retry' to retry or 'openspec timer cancel' to discard it.");
     }
   }
 
@@ -765,7 +774,7 @@ export async function archiveTimer(options: ArchiveTimerOptions = {}): Promise<T
       );
     }
     throw new Error(
-      `Failed to create Jira worklog. Session saved as sync_pending. Use 'openspec archive --retry' after fixing the issue.\n${pendingSession.sync_error}`
+      `Failed to create Jira worklog. Session saved as sync_pending. Use 'osj archive --retry' after fixing the issue.\n${pendingSession.sync_error}`
     );
   }
 }
@@ -817,6 +826,55 @@ export async function status(options: { blocks?: boolean } = {}): Promise<void> 
   if (session.sync_error) {
     console.log(`Sync error: ${session.sync_error}`);
   }
+}
+
+export async function showImportedTicket(options: ShowImportedTicketOptions = {}): Promise<void> {
+  const session = await getActiveSession();
+  const result: ImportedTicketView = !session
+    ? {
+        found: false,
+        reason: 'no_active_session',
+        message: 'No active OpenSpec session found.',
+        jira_issue_key: null,
+        ticket: null,
+      }
+    : !session.jira_ticket
+      ? {
+          found: false,
+          reason: 'no_imported_ticket',
+          message: `Active session for ${session.jira_issue_key} has no imported Jira ticket context.`,
+          jira_issue_key: session.jira_issue_key,
+          ticket: null,
+        }
+      : {
+          found: true,
+          reason: 'ok',
+          message: `Imported Jira ticket context is available for ${session.jira_ticket.key}.`,
+          jira_issue_key: session.jira_issue_key,
+          ticket: session.jira_ticket,
+        };
+
+  if (options.json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  if (!result.found) {
+    console.log(result.message);
+    if (result.reason === 'no_imported_ticket') {
+      console.log("Start the session with `osj purpose --jira PROJ-123 --import-ticket` to persist ticket content locally.");
+    }
+    return;
+  }
+
+  const ticket = result.ticket!;
+  console.log(`Ticket: ${ticket.key}`);
+  console.log(`Summary: ${ticket.summary}`);
+  console.log(`Status: ${ticket.status ?? 'Unknown'}`);
+  console.log(`Assignee: ${ticket.assignee ?? 'Unassigned'}`);
+  console.log(`URL: ${ticket.url}`);
+  console.log('Description:');
+  console.log(ticket.description_text || 'No Jira description provided.');
 }
 
 export async function report(options: TimerReportOptions = {}): Promise<void> {
@@ -872,13 +930,27 @@ export async function switchBlock(options: SwitchBlockOptions): Promise<void> {
     throw new Error('No active OpenSpec session found.');
   }
   if (session.status === 'sync_pending') {
-    throw new Error("OpenSpec session is pending Jira sync.\nUse 'openspec archive --retry' to retry or 'openspec timer cancel' to discard it.");
+    throw new Error("OpenSpec session is pending Jira sync.\nUse 'osj archive --retry' to retry or 'osj timer cancel' to discard it.");
   }
   if (session.status === 'paused') {
     throw new Error("OpenSpec session is paused.\nUse 'openspec timer resume' before switching work blocks.");
   }
   if (session.status !== 'running') {
     throw new Error('No running OpenSpec session found.');
+  }
+
+  const switchedSession = await switchRunningSessionBlock(options);
+  if (!switchedSession) {
+    throw new Error('No running OpenSpec session found.');
+  }
+  console.log(`Switched OpenSpec timer block for ${session.jira_issue_key}`);
+  console.log(`Current block: ${options.mode} / ${options.kind}`);
+}
+
+export async function switchRunningSessionBlock(options: SwitchBlockOptions): Promise<TimerSession | null> {
+  const session = await getActiveSession();
+  if (!session || session.status !== 'running') {
+    return null;
   }
 
   const switchedAt = nowUtc();
@@ -893,8 +965,7 @@ export async function switchBlock(options: SwitchBlockOptions): Promise<void> {
 
   await saveActiveSession(switchedSession);
   await sessionManager.syncFromTimerSession(switchedSession);
-  console.log(`Switched OpenSpec timer block for ${session.jira_issue_key}`);
-  console.log(`Current block: ${options.mode} / ${options.kind}`);
+  return switchedSession;
 }
 
 export async function switchToAutomaticBlock(
@@ -902,29 +973,21 @@ export async function switchToAutomaticBlock(
   kind: TimerWorkKind,
   description: string
 ): Promise<boolean> {
-  const session = await getActiveSession();
-  if (!session || session.status !== 'running') {
-    return false;
-  }
-
-  const switchedAt = nowUtc();
-  const switchedSession = startBlock(session, switchedAt, mode, kind, description, 'auto');
-  await saveActiveSession(switchedSession);
-  await sessionManager.syncFromTimerSession(switchedSession);
-  return true;
+  return Boolean(await switchRunningSessionBlock({
+    mode,
+    kind,
+    description,
+    source: 'auto',
+  }));
 }
 
 export async function switchToDefaultHumanWork(description = DEFAULT_HUMAN_DESCRIPTION): Promise<boolean> {
-  const session = await getActiveSession();
-  if (!session || session.status !== 'running') {
-    return false;
-  }
-
-  const switchedAt = nowUtc();
-  const switchedSession = startBlock(session, switchedAt, 'human', 'implementation', description, 'auto');
-  await saveActiveSession(switchedSession);
-  await sessionManager.syncFromTimerSession(switchedSession);
-  return true;
+  return Boolean(await switchRunningSessionBlock({
+    mode: 'human',
+    kind: 'implementation',
+    description,
+    source: 'auto',
+  }));
 }
 
 export async function pause(): Promise<void> {
@@ -933,7 +996,7 @@ export async function pause(): Promise<void> {
     throw new Error('No active OpenSpec session found.');
   }
   if (session.status === 'sync_pending') {
-    throw new Error("OpenSpec session is pending Jira sync.\nUse 'openspec archive --retry' to retry or 'openspec timer cancel' to discard it.");
+    throw new Error("OpenSpec session is pending Jira sync.\nUse 'osj archive --retry' to retry or 'osj timer cancel' to discard it.");
   }
   if (session.status === 'paused') {
     throw new Error('OpenSpec session is already paused.');
@@ -969,7 +1032,7 @@ export async function resume(): Promise<void> {
     throw new Error('No active OpenSpec session found.');
   }
   if (session.status === 'sync_pending') {
-    throw new Error("OpenSpec session is pending Jira sync.\nUse 'openspec archive --retry' to retry or 'openspec timer cancel' to discard it.");
+    throw new Error("OpenSpec session is pending Jira sync.\nUse 'osj archive --retry' to retry or 'osj timer cancel' to discard it.");
   }
   if (session.status === 'running') {
     throw new Error('OpenSpec session is already running.');

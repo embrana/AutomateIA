@@ -251,6 +251,80 @@ Old instructions content
       }
     });
 
+    it('should generate /osj companion prompts for configured Codex projects', async () => {
+      const originalCodexHome = process.env.CODEX_HOME;
+      const codexHome = path.join(testDir, '.codex-home');
+      await fs.mkdir(path.join(codexHome, 'prompts'), { recursive: true });
+      process.env.CODEX_HOME = codexHome;
+
+      try {
+        const skillsDir = path.join(testDir, '.codex', 'skills');
+        await fs.mkdir(path.join(skillsDir, 'openspec-explore'), {
+          recursive: true,
+        });
+        await fs.writeFile(
+          path.join(skillsDir, 'openspec-explore', 'SKILL.md'),
+          'old content'
+        );
+
+        await updateCommand.execute(testDir);
+
+        expect(await FileSystemUtils.fileExists(path.join(codexHome, 'prompts', 'osj-runtime-status.md'))).toBe(true);
+        expect(await FileSystemUtils.fileExists(path.join(codexHome, 'prompts', 'osj-runtime-explain.md'))).toBe(true);
+        expect(await FileSystemUtils.fileExists(path.join(codexHome, 'prompts', 'osj-approval-show.md'))).toBe(true);
+        expect(await FileSystemUtils.fileExists(path.join(codexHome, 'prompts', 'osj-timer-report.md'))).toBe(true);
+        expect(await FileSystemUtils.fileExists(path.join(codexHome, 'prompts', 'osj-timer-cancel.md'))).toBe(true);
+        expect(await FileSystemUtils.fileExists(path.join(codexHome, 'prompts', 'osj-ticket-show.md'))).toBe(true);
+        expect(await FileSystemUtils.fileExists(path.join(codexHome, 'prompts', 'osj-tickets.md'))).toBe(true);
+        expect(await FileSystemUtils.fileExists(path.join(codexHome, 'prompts', 'osj-purpose-start.md'))).toBe(true);
+        expect(await FileSystemUtils.fileExists(path.join(codexHome, 'prompts', 'osj-archive-retry.md'))).toBe(true);
+        expect(await FileSystemUtils.fileExists(path.join(codexHome, 'prompts', 'osj-archive-session.md'))).toBe(true);
+        expect(await FileSystemUtils.fileExists(path.join(testDir, '.codex', 'skills', 'openspec-osj-runtime-status', 'SKILL.md'))).toBe(true);
+        expect(await FileSystemUtils.fileExists(path.join(testDir, '.codex', 'skills', 'openspec-osj-runtime-explain', 'SKILL.md'))).toBe(true);
+        expect(await FileSystemUtils.fileExists(path.join(testDir, '.codex', 'skills', 'openspec-osj-purpose-start', 'SKILL.md'))).toBe(true);
+        expect(await FileSystemUtils.fileExists(path.join(testDir, '.codex', 'skills', 'openspec-osj-archive-retry', 'SKILL.md'))).toBe(true);
+        expect(await FileSystemUtils.fileExists(path.join(testDir, '.codex', 'skills', 'openspec-osj-archive-session', 'SKILL.md'))).toBe(true);
+        expect(await FileSystemUtils.fileExists(path.join(testDir, '.codex', 'skills', 'openspec-osj-timer-cancel', 'SKILL.md'))).toBe(true);
+        expect(await FileSystemUtils.fileExists(path.join(testDir, '.codex', 'skills', 'openspec-osj-ticket-show', 'SKILL.md'))).toBe(true);
+
+        const promptContent = await fs.readFile(path.join(codexHome, 'prompts', 'osj-runtime-status.md'), 'utf-8');
+        expect(promptContent).toContain('openspec-osj-runtime-status');
+        expect(promptContent).not.toContain('**Steps**');
+
+        const skillContent = await fs.readFile(path.join(testDir, '.codex', 'skills', 'openspec-osj-runtime-status', 'SKILL.md'), 'utf-8');
+        expect(skillContent).toContain('**Response format**');
+        expect(skillContent).toContain('**Conclusion**');
+        expect(skillContent).toContain('**Next step**');
+        expect(skillContent).toContain('Do not mention the helper, prompt, or skill implementation details.');
+
+        const purposeSkillContent = await fs.readFile(path.join(testDir, '.codex', 'skills', 'openspec-osj-purpose-start', 'SKILL.md'), 'utf-8');
+        expect(purposeSkillContent).toContain('run `osj tickets --json`');
+        expect(purposeSkillContent).toContain('Never guess a Jira issue key.');
+
+        const archiveRetrySkillContent = await fs.readFile(path.join(testDir, '.codex', 'skills', 'openspec-osj-archive-retry', 'SKILL.md'), 'utf-8');
+        expect(archiveRetrySkillContent).toContain('default: `osj archive --retry`');
+        expect(archiveRetrySkillContent).toContain('This helper is only for retrying a pending Jira sync.');
+
+        const archiveSkillContent = await fs.readFile(path.join(testDir, '.codex', 'skills', 'openspec-osj-archive-session', 'SKILL.md'), 'utf-8');
+        expect(archiveSkillContent).toContain('Never use it to archive an active change.');
+        expect(archiveSkillContent).toContain('osj archive --comment "Implementation session"');
+
+        const timerCancelSkillContent = await fs.readFile(path.join(testDir, '.codex', 'skills', 'openspec-osj-timer-cancel', 'SKILL.md'), 'utf-8');
+        expect(timerCancelSkillContent).toContain('`osj timer cancel`');
+        expect(timerCancelSkillContent).toContain('cancel does not archive that change');
+
+        const ticketShowSkillContent = await fs.readFile(path.join(testDir, '.codex', 'skills', 'openspec-osj-ticket-show', 'SKILL.md'), 'utf-8');
+        expect(ticketShowSkillContent).toContain('`osj ticket show --json`');
+        expect(ticketShowSkillContent).toContain('no imported Jira ticket context');
+      } finally {
+        if (originalCodexHome === undefined) {
+          delete process.env.CODEX_HOME;
+        } else {
+          process.env.CODEX_HOME = originalCodexHome;
+        }
+      }
+    });
+
   });
 
   describe('multi-tool support', () => {

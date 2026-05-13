@@ -9,6 +9,7 @@ import {
   purpose,
   report,
   resume,
+  showImportedTicket,
   startManualHumanTimer,
   switchBlock,
   validateIssueKey,
@@ -16,6 +17,7 @@ import {
 import { getActiveSession, getSessionsDir, saveActiveSession } from '../../src/core/timer/store.js';
 import { buildAssignedTicketsJql, listAssignedTickets } from '../../src/core/timer/tickets.js';
 import { newChangeCommand } from '../../src/commands/workflow/new-change.js';
+import { createTrackedOpsxChange, trackOpsxWorkflow } from '../../src/commands/workflow/opsx.js';
 
 function jsonResponse(data: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(data), {
@@ -177,6 +179,67 @@ describe('OpenSpec Jira work timer', () => {
     );
     expect(consoleLogSpy).toHaveBeenCalledWith(
       'Imported Jira ticket context: PROJ-123 - Implement OpenSpec Jira tracking'
+    );
+  });
+
+  it('shows imported Jira ticket context from the active session as JSON', async () => {
+    vi.setSystemTime(new Date('2026-04-19T17:03:11.000Z'));
+    fetchSpy.mockResolvedValueOnce(jsonResponse({
+      key: 'PROJ-123',
+      fields: {
+        summary: 'Implement OpenSpec Jira tracking',
+        status: { name: 'In Progress' },
+        assignee: { displayName: 'Emiliano' },
+        description: {
+          type: 'doc',
+          version: 1,
+          content: [
+            {
+              type: 'paragraph',
+              content: [{ type: 'text', text: 'Track local OpenSpec work sessions.' }],
+            },
+          ],
+        },
+      },
+    }));
+
+    await purpose('PROJ-123', { importTicket: true });
+    consoleLogSpy.mockClear();
+
+    await showImportedTicket({ json: true });
+
+    expect(consoleLogSpy).toHaveBeenCalledTimes(1);
+    const payload = JSON.parse(consoleLogSpy.mock.calls[0][0] as string);
+    expect(payload).toMatchObject({
+      found: true,
+      reason: 'ok',
+      jira_issue_key: 'PROJ-123',
+      ticket: {
+        key: 'PROJ-123',
+        summary: 'Implement OpenSpec Jira tracking',
+        status: 'In Progress',
+        assignee: 'Emiliano',
+        description_text: 'Track local OpenSpec work sessions.',
+      },
+    });
+  });
+
+  it('explains when the active session has no imported Jira ticket context', async () => {
+    vi.setSystemTime(new Date('2026-04-19T17:03:11.000Z'));
+    fetchSpy.mockResolvedValueOnce(jsonResponse({ key: 'PROJ-123' }));
+
+    await purpose('PROJ-123');
+    consoleLogSpy.mockClear();
+
+    await showImportedTicket();
+
+    expect(consoleLogSpy).toHaveBeenNthCalledWith(
+      1,
+      'Active session for PROJ-123 has no imported Jira ticket context.'
+    );
+    expect(consoleLogSpy).toHaveBeenNthCalledWith(
+      2,
+      "Start the session with `osj purpose --jira PROJ-123 --import-ticket` to persist ticket content locally."
     );
   });
 
@@ -368,6 +431,129 @@ describe('OpenSpec Jira work timer', () => {
       name: 'proj-123-implement-from-session-workflow',
     });
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('tracks OPSX explore natively and exposes imported ticket context as JSON', async () => {
+    vi.setSystemTime(new Date('2026-04-19T17:03:11.000Z'));
+    fetchSpy.mockResolvedValueOnce(jsonResponse({
+      key: 'PROJ-123',
+      fields: {
+        summary: 'Explore imported Jira context',
+        status: { name: 'In Progress' },
+        assignee: { displayName: 'Emiliano' },
+        description: {
+          type: 'doc',
+          version: 1,
+          content: [
+            {
+              type: 'paragraph',
+              content: [{ type: 'text', text: 'Investigate the imported session context.' }],
+            },
+          ],
+        },
+      },
+    }));
+
+    await purpose('PROJ-123', { importTicket: true });
+    consoleLogSpy.mockClear();
+
+    const result = await trackOpsxWorkflow('explore', { json: true });
+
+    expect(consoleLogSpy).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(consoleLogSpy.mock.calls[0][0] as string)).toMatchObject({
+      workflow: 'explore',
+      phase: 'discovery',
+      session: {
+        found: true,
+        jira_issue_key: 'PROJ-123',
+        status: 'running',
+        tracking_applied: true,
+        target_block: {
+          mode: 'human_agent_interaction',
+          kind: 'spec',
+        },
+      },
+      ticket: {
+        key: 'PROJ-123',
+        summary: 'Explore imported Jira context',
+      },
+    });
+    expect(result.message).toContain('Tracked OPSX explore');
+
+    const session = await getActiveSession();
+    expect(session?.current_block).toMatchObject({
+      actor_mode: 'human_agent_interaction',
+      work_kind: 'spec',
+      description: 'OPSX explore discovery and requirement clarification',
+    });
+  });
+
+  it('creates a tracked OPSX change from a running session and restores collaborative propose tracking', async () => {
+    vi.setSystemTime(new Date('2026-04-19T17:03:11.000Z'));
+    fetchSpy.mockResolvedValueOnce(jsonResponse({
+      key: 'PROJ-123',
+      fields: {
+        summary: 'Create tracked OPSX change',
+        status: { name: 'In Progress' },
+        assignee: { displayName: 'Emiliano' },
+        description: {
+          type: 'doc',
+          version: 1,
+          content: [
+            {
+              type: 'paragraph',
+              content: [{ type: 'text', text: 'Create a tracked change from the active session.' }],
+            },
+          ],
+        },
+      },
+    }));
+
+    await purpose('PROJ-123', { importTicket: true });
+    await createTrackedOpsxChange('proj-123-create-tracked-opsx-change');
+
+    const session = await getActiveSession();
+    expect(session?.openspec_change).toMatchObject({
+      name: 'proj-123-create-tracked-opsx-change',
+    });
+    expect(session?.current_block).toMatchObject({
+      actor_mode: 'human_agent_interaction',
+      work_kind: 'spec',
+      description: 'OPSX propose discovery and artifact drafting',
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('creates a tracked OPSX change from a paused session and keeps the change attached to the runtime session', async () => {
+    vi.setSystemTime(new Date('2026-04-19T17:03:11.000Z'));
+    fetchSpy.mockResolvedValueOnce(jsonResponse({
+      key: 'PROJ-123',
+      fields: {
+        summary: 'Create tracked change from paused session',
+        status: { name: 'In Progress' },
+        assignee: { displayName: 'Emiliano' },
+        description: {
+          type: 'doc',
+          version: 1,
+          content: [
+            {
+              type: 'paragraph',
+              content: [{ type: 'text', text: 'Allow attaching a change while paused.' }],
+            },
+          ],
+        },
+      },
+    }));
+
+    await purpose('PROJ-123', { importTicket: true });
+    await pause();
+    await createTrackedOpsxChange('proj-123-create-tracked-change-while-paused');
+
+    const session = await getActiveSession();
+    expect(session?.status).toBe('paused');
+    expect(session?.openspec_change).toMatchObject({
+      name: 'proj-123-create-tracked-change-while-paused',
+    });
   });
 
   it('turns structured Jira SDD sections into a richer OpenSpec delta spec', async () => {
@@ -719,7 +905,7 @@ Permitir al Director Técnico ingresar y guardar su información general de perf
     expect(archived.paused_duration_seconds).toBeGreaterThan(0);
   });
 
-  it('keeps failed archive attempts as sync_pending and retries without extending duration', async () => {
+  it('keeps failed archive attempts as sync_pending and retries without extending duration even without explicit retry flag', async () => {
     vi.setSystemTime(new Date('2026-04-19T17:00:00.000Z'));
     fetchSpy
       .mockResolvedValueOnce(jsonResponse({ key: 'PROJ-123' }))
@@ -742,7 +928,7 @@ Permitir al Director Técnico ingresar y guardar su información general de perf
     vi.setSystemTime(new Date('2026-04-19T19:00:00.000Z'));
     fetchSpy.mockResolvedValueOnce(jsonResponse({ id: 'retry-1' }, { status: 201 }));
 
-    await archiveTimer({ retry: true });
+    await archiveTimer();
 
     expect(await getActiveSession()).toBeNull();
     const retryPayload = JSON.parse((fetchSpy.mock.calls[2][1] as RequestInit).body as string);

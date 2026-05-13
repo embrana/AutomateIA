@@ -27,6 +27,7 @@ import {
   purpose as startTimerSession,
   report as timerReport,
   resume as resumeTimer,
+  showImportedTicket,
   startManualHumanTimer,
   status as timerStatus,
   switchBlock as switchTimerBlock,
@@ -52,12 +53,16 @@ import {
   templatesCommand,
   schemasCommand,
   newChangeCommand,
+  trackOpsxWorkflow,
+  createTrackedOpsxChange,
   DEFAULT_SCHEMA,
   type StatusOptions,
   type InstructionsOptions,
   type TemplatesOptions,
   type SchemasOptions,
   type NewChangeOptions,
+  type OpsxWorkflow,
+  type OpsxWorkflowPhase,
 } from '../commands/workflow/index.js';
 import { maybeShowTelemetryNotice, trackCommand, shutdown } from '../telemetry/index.js';
 
@@ -65,7 +70,11 @@ const program = new Command();
 const require = createRequire(import.meta.url);
 const { version } = require('../../package.json');
 const invokedName = path.basename(process.argv[1] || 'osj');
-const cliName = invokedName === 'openspec.js' ? 'osj' : invokedName;
+const cliName = invokedName === 'openspec.js'
+  ? 'osj'
+  : invokedName === 'index.js'
+    ? 'openspec'
+    : invokedName;
 const runtimeStatusCommand = new RuntimeStatusCommand();
 const runtimeExplainCommand = new RuntimeExplainCommand();
 const sessionManager = new SessionManager();
@@ -446,6 +455,22 @@ program
     }
   });
 
+program
+  .command('ticket')
+  .description('Inspect Jira ticket context imported into the active timer session')
+  .command('show')
+  .description('Show the Jira ticket context imported into the active timer session')
+  .option('--json', 'Output imported ticket as JSON')
+  .action(async (options: { json?: boolean }) => {
+    try {
+      await showImportedTicket(options);
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
 const timerCmd = program
   .command('timer')
   .description('Manage the OpenSpec work timer');
@@ -453,6 +478,10 @@ const timerCmd = program
 const runtimeCmd = program
   .command('runtime')
   .description('Inspect agentic runtime state');
+
+const opsxCmd = program
+  .command('opsx')
+  .description('Native helpers for OPSX workflow tracking and session-aware change creation');
 
 const agentCmd = program
   .command('agent')
@@ -487,6 +516,55 @@ runtimeCmd
   .action(async (options: { json?: boolean }) => {
     try {
       await runtimeExplainCommand.execute(options);
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+opsxCmd
+  .command('track <workflow> [phase]')
+  .description('Track an OPSX workflow phase on the active session and expose imported ticket context')
+  .option('--json', 'Output workflow tracking context as JSON')
+  .action(async (workflow: string, phase: string | undefined, options: { json?: boolean }) => {
+    try {
+      const normalizedWorkflow = workflow.trim().toLowerCase();
+      if (normalizedWorkflow !== 'explore' && normalizedWorkflow !== 'propose') {
+        throw new Error(`Unsupported OPSX workflow '${workflow}'. Use explore or propose.`);
+      }
+
+      const normalizedPhase = phase?.trim().toLowerCase();
+      if (
+        normalizedPhase
+        && normalizedPhase !== 'discovery'
+        && normalizedPhase !== 'generation'
+        && normalizedPhase !== 'review'
+      ) {
+        throw new Error(`Unsupported OPSX phase '${phase}'. Use discovery, generation, or review.`);
+      }
+
+      await trackOpsxWorkflow(
+        normalizedWorkflow as OpsxWorkflow,
+        {
+          json: options.json,
+          phase: normalizedPhase as OpsxWorkflowPhase | undefined,
+        }
+      );
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+opsxCmd
+  .command('create-change [name]')
+  .description('Create an OpenSpec change with OPSX session-aware tracking and governance')
+  .option('--schema <name>', `Workflow schema to use (default: ${DEFAULT_SCHEMA})`)
+  .action(async (name: string | undefined, options: { schema?: string }) => {
+    try {
+      await createTrackedOpsxChange(name, options);
     } catch (error) {
       console.log();
       ora().fail(`Error: ${(error as Error).message}`);

@@ -34,13 +34,27 @@ When ready to implement, run /opsx:apply
 
    **IMPORTANT**: Do NOT proceed without understanding what the user wants to build.
 
-2. **Create the change directory**
+2. **Bootstrap OPSX proposal tracking and session context**
    \`\`\`bash
-   openspec new change "<name>"
+   osj opsx track propose discovery --json
    \`\`\`
-   This creates a scaffolded change at \`openspec/changes/<name>/\` with \`.openspec.yaml\`.
+   Use this native helper as the source of truth for:
+   - whether an active \`osj\` session exists
+   - whether collaborative \`human_agent_interaction / spec\` tracking was applied
+   - whether imported Jira ticket context is available
+   - whether session-aware change creation should be used
+   If the helper reports imported Jira context, use it as proposal input. If it reports no active session, continue with plain OpenSpec.
 
-3. **Get the artifact build order**
+3. **Create the change directory**
+   \`\`\`bash
+   osj opsx create-change "<name>"
+   \`\`\`
+   This native helper hard-wires the correct governance behavior:
+   - with an active session, it creates the change using session-aware Jira linkage
+   - without a session, it falls back to a plain OpenSpec change
+   - during creation, it records the autonomous spec-generation block natively instead of relying on prompt wording
+
+4. **Get the artifact build order**
    \`\`\`bash
    openspec status --change "<name>" --json
    \`\`\`
@@ -48,7 +62,12 @@ When ready to implement, run /opsx:apply
    - \`applyRequires\`: array of artifact IDs needed before implementation (e.g., \`["tasks"]\`)
    - \`artifacts\`: list of all artifacts with their status and dependencies
 
-4. **Create artifacts in sequence until apply-ready**
+5. **Create artifacts in sequence until apply-ready**
+
+   - Before generating artifacts, switch the native OPSX tracking phase:
+     \`\`\`bash
+     osj opsx track propose generation
+     \`\`\`
 
    Use the **TodoWrite tool** to track progress through the artifacts.
 
@@ -80,7 +99,13 @@ When ready to implement, run /opsx:apply
       - Use **AskUserQuestion tool** to clarify
       - Then continue with creation
 
-5. **Show final status**
+   d. **When the artifact generation pass is complete or you need user discussion again**:
+      - Switch the native OPSX tracking phase back to collaborative review:
+        \`\`\`bash
+        osj opsx track propose review
+        \`\`\`
+
+6. **Show final status**
    \`\`\`bash
    openspec status --change "<name>"
    \`\`\`
@@ -108,6 +133,7 @@ After completing all artifacts, summarize:
 - Always read dependency artifacts before creating a new one
 - If context is critically unclear, ask the user - but prefer making reasonable decisions to keep momentum
 - If a change with that name already exists, ask if user wants to continue it or create a new one
+- Treat \`osj opsx ...\` helpers as the native authority for OPSX tracking and session-aware governance
 - Verify each artifact file exists after writing before proceeding to next`,
     license: 'MIT',
     compatibility: 'Requires openspec CLI.',
@@ -145,13 +171,27 @@ When ready to implement, run /opsx:apply
 
    **IMPORTANT**: Do NOT proceed without understanding what the user wants to build.
 
-2. **Create the change directory**
+2. **Bootstrap OPSX proposal tracking and session context**
    \`\`\`bash
-   openspec new change "<name>"
+   osj opsx track propose discovery --json
    \`\`\`
-   This creates a scaffolded change at \`openspec/changes/<name>/\` with \`.openspec.yaml\`.
+   Use this native helper as the source of truth for:
+   - whether an active \`osj\` session exists
+   - whether collaborative \`human_agent_interaction / spec\` tracking was applied
+   - whether imported Jira ticket context is available
+   - whether session-aware change creation should be used
+   If the helper reports imported Jira context, use it as proposal input. If it reports no active session, continue with plain OpenSpec.
 
-3. **Get the artifact build order**
+3. **Create the change directory**
+   \`\`\`bash
+   osj opsx create-change "<name>"
+   \`\`\`
+   This native helper hard-wires the correct governance behavior:
+   - with an active session, it creates the change using session-aware Jira linkage
+   - without a session, it falls back to a plain OpenSpec change
+   - during creation, it records the autonomous spec-generation block natively instead of relying on prompt wording
+
+4. **Get the artifact build order**
    \`\`\`bash
    openspec status --change "<name>" --json
    \`\`\`
@@ -159,7 +199,12 @@ When ready to implement, run /opsx:apply
    - \`applyRequires\`: array of artifact IDs needed before implementation (e.g., \`["tasks"]\`)
    - \`artifacts\`: list of all artifacts with their status and dependencies
 
-4. **Create artifacts in sequence until apply-ready**
+5. **Create artifacts in sequence until apply-ready**
+
+   - Before generating artifacts, switch the native OPSX tracking phase:
+     \`\`\`bash
+     osj opsx track propose generation
+     \`\`\`
 
    Use the **TodoWrite tool** to track progress through the artifacts.
 
@@ -191,7 +236,13 @@ When ready to implement, run /opsx:apply
       - Use **AskUserQuestion tool** to clarify
       - Then continue with creation
 
-5. **Show final status**
+   d. **When the artifact generation pass is complete or you need user discussion again**:
+      - Switch the native OPSX tracking phase back to collaborative review:
+        \`\`\`bash
+        osj opsx track propose review
+        \`\`\`
+
+6. **Show final status**
    \`\`\`bash
    openspec status --change "<name>"
    \`\`\`
@@ -219,6 +270,7 @@ After completing all artifacts, summarize:
 - Always read dependency artifacts before creating a new one
 - If context is critically unclear, ask the user - but prefer making reasonable decisions to keep momentum
 - If a change with that name already exists, ask if user wants to continue it or create a new one
+- Treat \`osj opsx ...\` helpers as the native authority for OPSX tracking and session-aware governance
 - Verify each artifact file exists after writing before proceeding to next`
   };
 }

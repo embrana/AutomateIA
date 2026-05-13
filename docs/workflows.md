@@ -53,6 +53,27 @@ openspec config profile
 openspec update
 ```
 
+## OPSX With An Active OSJ Session
+
+In this Jira/Tempo fork, OPSX can also operate against an active `osj` session. That matters when you started from a Jira ticket and want the session, ticket, and change to stay formally linked.
+
+Recommended native helper sequence:
+
+```bash
+osj opsx track explore --json
+osj opsx track propose discovery --json
+osj opsx create-change <change-name>
+osj opsx track propose generation
+osj opsx track propose review
+```
+
+What this adds:
+
+- imported Jira ticket context becomes the primary input for exploration and proposal work
+- timer blocks switch natively between `human_agent_interaction / spec` and `ai_autonomous / spec`
+- the created change is attached back to the active session when possible
+- `sync_pending` sessions are blocked until recovered or discarded
+
 ## Workflow Patterns (Expanded Mode)
 
 ### Quick Feature

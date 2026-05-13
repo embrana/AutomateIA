@@ -36,7 +36,7 @@ Our philosophy:
 > [!TIP]
 > **New workflow now available!** We've rebuilt OpenSpec with a new artifact-guided workflow.
 >
-> Run `/opsx:propose "your idea"` to get started. → [Learn more here](docs/opsx.md)
+> Run `/opsx:propose "your idea"` to get started. In Codex-style tools this usually appears as `/opsx-propose`. → [Learn more here](docs/opsx.md)
 
 <p align="center">
   Follow <a href="https://x.com/0xTab">@0xTab on X</a> for updates · Join the <a href="https://discord.gg/YctCnvvshC">OpenSpec Discord</a> for help and questions.
@@ -95,6 +95,8 @@ openspec init
 ```
 
 Now tell your AI: `/opsx:propose <what-you-want-to-build>`
+
+If you're using the Jira/Tempo workflow in this fork and already have an active `osj` session, `/opsx:explore` and `/opsx:propose` now reuse the imported Jira ticket context and enforce native timer block tracking through `osj opsx ...` helpers.
 
 If you want the expanded workflow (`/opsx:new`, `/opsx:continue`, `/opsx:ff`, `/opsx:verify`, `/opsx:sync`, `/opsx:bulk-archive`, `/opsx:onboard`), select it with `openspec config profile` and apply with `openspec update`.
 
@@ -165,6 +167,24 @@ Add comments
 
 `Add comments` is only needed to write the OpenSpec archive summary back to the Jira ticket. If it is missing, the worklog can still be created.
 
+### OPSX-Aware Jira Sessions
+
+When an `osj` session is active, the OPSX workflows are no longer prompt-only. OpenSpec now exposes native helpers that the generated `/opsx:explore` and `/opsx:propose` prompts can call:
+
+```bash
+osj opsx track explore --json
+osj opsx track propose discovery --json
+osj opsx create-change <change-name>
+osj opsx track propose generation
+osj opsx track propose review
+```
+
+These helpers add three important guarantees:
+
+- imported Jira ticket context becomes the primary context for OPSX exploration/proposal work;
+- timer blocks switch natively between `human_agent_interaction / spec` and `ai_autonomous / spec`;
+- change creation becomes session-aware and attaches the created change back to the active `osj` session.
+
 ### Flow Map
 
 ```mermaid
@@ -175,7 +195,7 @@ flowchart TD
     B --> E["Active timer session"]
     C --> E
     D --> F["Active timer + change artifacts"]
-    E --> G["osj new change --from-session"]
+    E --> G["osj opsx create-change CHANGE_NAME"]
     E --> H["Work without change"]
     G --> F
     F --> I["Implement / update tasks / validate"]
@@ -243,7 +263,7 @@ openspec/changes/<change-name>/jira-ticket.md
 openspec/changes/<change-name>/specs/<change-name>/spec.md
 ```
 
-### Flow 3: Start The Session First, Create The Change Later
+### Flow 3: Start The Session First, Then Create The Change With OPSX Governance
 
 This is the flow for: "I chose the ticket, I started working, and now I want OpenSpec artifacts."
 
@@ -251,13 +271,23 @@ This is the flow for: "I chose the ticket, I started working, and now I want Ope
 flowchart LR
     A["osj purpose --pick --import-ticket"] --> B["Active timer session"]
     B --> C["Work a bit"]
-    C --> D["osj new change --from-session"]
-    D --> E["Reuse Jira ticket from active session"]
-    E --> F["Create proposal.md, tasks.md, jira-ticket.md, spec.md"]
-    F --> G["Attach created change to active session"]
+    C --> D["osj opsx track propose discovery --json"]
+    D --> E["Switch to human_agent_interaction / spec"]
+    E --> F["osj opsx create-change CHANGE_NAME"]
+    F --> G["Reuse Jira ticket from active session"]
+    G --> H["Switch to ai_autonomous / spec during change generation"]
+    H --> I["Attach created change to active session"]
+    I --> J["osj opsx track propose review"]
+    J --> K["Return to human_agent_interaction / spec for review"]
 ```
 
-You can still create artifacts from a specific issue key without using the active session:
+Low-level/manual fallbacks still exist when you do not want the native OPSX helper:
+
+```bash
+osj new change --from-session
+```
+
+You can also still create artifacts from a specific issue key without using the active session:
 
 ```bash
 osj new change --from-ticket PROJ-123
@@ -316,22 +346,28 @@ That means a developer can still log real time spent, even when the OpenSpec cha
 
 ### Flow 6: Granular Time Blocks
 
-This workflow supports granular worklog segmentation for the same Jira ticket.
+This workflow supports granular worklog segmentation for the same Jira ticket. OPSX now participates in that segmentation too.
 
 ```mermaid
 flowchart LR
     A["Active Jira session"] --> B["human / implementation"]
-    B --> C["osj timer switch --mode ai_autonomous --kind spec"]
-    C --> D["ai_autonomous / spec"]
-    D --> E["osj timer bugfix --description 'Fix validation errors'"]
-    E --> F["human / bugfix"]
-    F --> G["osj archive ..."]
-    G --> H["Create one Jira worklog per grouped block"]
+    B --> C["osj opsx track explore --json"]
+    C --> D["human_agent_interaction / spec"]
+    D --> E["osj opsx track propose generation"]
+    E --> F["ai_autonomous / spec"]
+    F --> G["osj timer bugfix --description 'Fix validation errors'"]
+    G --> H["human / bugfix"]
+    H --> I["osj archive ..."]
+    I --> J["Create one Jira worklog per grouped block"]
 ```
 
 Commands for block control:
 
 ```bash
+osj opsx track explore --json
+osj opsx track propose discovery --json
+osj opsx track propose generation
+osj opsx track propose review
 osj timer pause
 osj timer resume
 osj timer switch --mode human --kind bugfix --description "Fix validation errors"
@@ -355,10 +391,17 @@ Start timer and create artifacts:
   osj purpose --pick --import-ticket --create-change
   osj purpose --jira PROJ-123 --import-ticket --create-change
 
-Create artifacts later from the active session:
+Create artifacts later from the active session with native OPSX tracking:
+  osj opsx track propose discovery --json
+  osj opsx create-change <change-name>
+  osj opsx track propose generation
+  osj opsx track propose review
+
+Low-level/manual fallback:
   osj new change --from-session
 
 Preview worklogs:
+  osj ticket show
   osj timer report
   osj archive <change-name> --dry-run --comment "Implementation session"
 

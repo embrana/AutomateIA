@@ -29,7 +29,10 @@ export const codexAdapter: ToolCommandAdapter = {
   toolId: 'codex',
 
   getFilePath(commandId: string): string {
-    return path.join(getCodexHome(), 'prompts', `opsx-${commandId}.md`);
+    const fileName = commandId.startsWith('osj-')
+      ? `${commandId}.md`
+      : `opsx-${commandId}.md`;
+    return path.join(getCodexHome(), 'prompts', fileName);
   },
 
   formatFile(content: CommandContent): string {

@@ -27,6 +27,26 @@ import {
   getOpsxVerifyCommandTemplate,
   getOpsxOnboardCommandTemplate,
   getOpsxProposeCommandTemplate,
+  getOsjApprovalShowSkillTemplate,
+  getOsjArchiveRetrySkillTemplate,
+  getOsjArchiveSessionSkillTemplate,
+  getOsjTimerCancelSkillTemplate,
+  getOsjTicketShowSkillTemplate,
+  getOsjTicketsSkillTemplate,
+  getOsjPurposeStartSkillTemplate,
+  getOsjRuntimeExplainSkillTemplate,
+  getOsjRuntimeStatusSkillTemplate,
+  getOsjTimerReportSkillTemplate,
+  getOsjApprovalShowCommandTemplate,
+  getOsjArchiveRetryCommandTemplate,
+  getOsjArchiveSessionCommandTemplate,
+  getOsjTimerCancelCommandTemplate,
+  getOsjTicketShowCommandTemplate,
+  getOsjTicketsCommandTemplate,
+  getOsjPurposeStartCommandTemplate,
+  getOsjRuntimeExplainCommandTemplate,
+  getOsjRuntimeStatusCommandTemplate,
+  getOsjTimerReportCommandTemplate,
   type SkillTemplate,
 } from '../templates/skill-templates.js';
 import type { CommandContent } from '../command-generation/index.js';
@@ -46,6 +66,36 @@ export interface SkillTemplateEntry {
 export interface CommandTemplateEntry {
   template: ReturnType<typeof getOpsxExploreCommandTemplate>;
   id: string;
+}
+
+function getCodexCompanionCommandTemplates(): CommandTemplateEntry[] {
+  return [
+    { template: getOsjArchiveRetryCommandTemplate(), id: 'osj-archive-retry' },
+    { template: getOsjArchiveSessionCommandTemplate(), id: 'osj-archive-session' },
+    { template: getOsjTimerCancelCommandTemplate(), id: 'osj-timer-cancel' },
+    { template: getOsjTicketShowCommandTemplate(), id: 'osj-ticket-show' },
+    { template: getOsjTicketsCommandTemplate(), id: 'osj-tickets' },
+    { template: getOsjPurposeStartCommandTemplate(), id: 'osj-purpose-start' },
+    { template: getOsjRuntimeStatusCommandTemplate(), id: 'osj-runtime-status' },
+    { template: getOsjRuntimeExplainCommandTemplate(), id: 'osj-runtime-explain' },
+    { template: getOsjApprovalShowCommandTemplate(), id: 'osj-approval-show' },
+    { template: getOsjTimerReportCommandTemplate(), id: 'osj-timer-report' },
+  ];
+}
+
+function getCodexCompanionSkillTemplates(): SkillTemplateEntry[] {
+  return [
+    { template: getOsjArchiveRetrySkillTemplate(), dirName: 'openspec-osj-archive-retry', workflowId: 'osj-archive-retry' },
+    { template: getOsjArchiveSessionSkillTemplate(), dirName: 'openspec-osj-archive-session', workflowId: 'osj-archive-session' },
+    { template: getOsjTimerCancelSkillTemplate(), dirName: 'openspec-osj-timer-cancel', workflowId: 'osj-timer-cancel' },
+    { template: getOsjTicketShowSkillTemplate(), dirName: 'openspec-osj-ticket-show', workflowId: 'osj-ticket-show' },
+    { template: getOsjTicketsSkillTemplate(), dirName: 'openspec-osj-tickets', workflowId: 'osj-tickets' },
+    { template: getOsjPurposeStartSkillTemplate(), dirName: 'openspec-osj-purpose-start', workflowId: 'osj-purpose-start' },
+    { template: getOsjRuntimeStatusSkillTemplate(), dirName: 'openspec-osj-runtime-status', workflowId: 'osj-runtime-status' },
+    { template: getOsjRuntimeExplainSkillTemplate(), dirName: 'openspec-osj-runtime-explain', workflowId: 'osj-runtime-explain' },
+    { template: getOsjApprovalShowSkillTemplate(), dirName: 'openspec-osj-approval-show', workflowId: 'osj-approval-show' },
+    { template: getOsjTimerReportSkillTemplate(), dirName: 'openspec-osj-timer-report', workflowId: 'osj-timer-report' },
+  ];
 }
 
 /**
@@ -72,6 +122,19 @@ export function getSkillTemplates(workflowFilter?: readonly string[]): SkillTemp
 
   const filterSet = new Set(workflowFilter);
   return all.filter(entry => filterSet.has(entry.workflowId));
+}
+
+/**
+ * Returns skill templates for a specific tool.
+ * Codex gets the normal workflow skills plus read-only `/osj-*` companion skills.
+ */
+export function getSkillTemplatesForTool(toolId: string, workflowFilter?: readonly string[]): SkillTemplateEntry[] {
+  const baseEntries = getSkillTemplates(workflowFilter);
+  if (toolId !== 'codex') {
+    return baseEntries;
+  }
+
+  return [...baseEntries, ...getCodexCompanionSkillTemplates()];
 }
 
 /**
@@ -115,6 +178,43 @@ export function getCommandContents(workflowFilter?: readonly string[]): CommandC
     tags: template.tags,
     body: template.content,
   }));
+}
+
+/**
+ * Returns command contents for a specific tool.
+ * Codex gets the normal workflow-backed `/opsx-*` commands plus a small set
+ * of read-only `/osj-*` companion commands.
+ */
+export function getCommandContentsForTool(toolId: string, workflowFilter?: readonly string[]): CommandContent[] {
+  const baseContents = getCommandContents(workflowFilter);
+  if (toolId !== 'codex') {
+    return baseContents;
+  }
+
+  const companionContents = getCodexCompanionCommandTemplates().map(({ template, id }) => ({
+    id,
+    name: template.name,
+    description: template.description,
+    category: template.category,
+    tags: template.tags,
+    body: template.content,
+  }));
+
+  return [...baseContents, ...companionContents];
+}
+
+/**
+ * Returns the managed command ids for a tool.
+ */
+export function getManagedCommandIdsForTool(toolId: string, workflowFilter?: readonly string[]): string[] {
+  return getCommandContentsForTool(toolId, workflowFilter).map((content) => content.id);
+}
+
+/**
+ * Returns managed skill entries for a tool.
+ */
+export function getManagedSkillEntriesForTool(toolId: string, workflowFilter?: readonly string[]): SkillTemplateEntry[] {
+  return getSkillTemplatesForTool(toolId, workflowFilter);
 }
 
 /**
