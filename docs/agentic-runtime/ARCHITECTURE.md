@@ -61,6 +61,25 @@ The target system is an **Agentic Development Runtime** for Jira-driven software
 7. prepare governed closure
 8. synchronize evidence, time, and Jira outcomes
 
+## Runtime Collaboration Flow
+
+```mermaid
+flowchart LR
+    A["Jira Ticket"] --> B["SessionRuntime"]
+    B --> C["ChangeRuntime"]
+    C --> D["ExecutionCycle"]
+    D --> E["ImplementationAgent"]
+    E --> F["CriticAgent"]
+    F --> G["ValidationAgent"]
+    G --> H["DeliveryAgent"]
+    H --> I["Archive / Jira worklog"]
+    B --> J["TelemetryManager"]
+    C --> J
+    D --> J
+    E --> K["AgentBackendRegistry"]
+    F --> K
+```
+
 ## Design Principles
 
 1. **Ticket-led execution**. Work begins from Jira or is explicitly linked back to Jira before closure.
@@ -126,6 +145,17 @@ The current bridge is:
 - `/opsx:propose` generation/review phases -> `osj opsx track propose generation|review`
 
 This keeps prompt-driven UX while moving timer classification, imported-ticket reuse, and session/change linkage into the CLI/runtime boundary instead of leaving them as prompt-only conventions.
+
+```mermaid
+flowchart TD
+    A["/opsx-explore"] --> B["osj opsx track explore"]
+    C["/opsx-propose"] --> D["osj opsx track propose discovery"]
+    D --> E["osj opsx create-change"]
+    E --> F["osj opsx track propose generation"]
+    F --> G["osj opsx track propose review"]
+    B --> H["Session timer blocks"]
+    G --> H
+```
 
 ### `StateEngine`
 

@@ -37,6 +37,18 @@ The smoke test passed for connectivity and routing:
 
 The smoke test failed as a clean governance demonstration because multiple runtime issues were exposed.
 
+## Execution Loop Tested
+
+```mermaid
+flowchart TD
+    A["ImplementationAgent"] --> B["CriticAgent"]
+    B --> C["ValidationAgent"]
+    C --> D{"Outcome"}
+    D -- "retryable" --> A
+    D -- "escalated" --> E["Approval / human decision"]
+    D -- "passed" --> F["DeliveryAgent"]
+```
+
 ## Model Comparison
 
 ### Shared behavior
@@ -99,6 +111,16 @@ Current default recommendation:
 - keep `codex-review` as the preferred reviewer backend for production use
 - keep `gemini-review` as a supported alternate backend
 - strengthen the Gemini critic contract so `CHANGES_REQUESTED` must include at least one structured finding
+
+## Reviewer Comparison Snapshot
+
+```mermaid
+flowchart LR
+    A["Critic runtime input"] --> B["gemini-review"]
+    A --> C["codex-review"]
+    B --> D["Good human questions<br/>weaker structured findings"]
+    C --> E["Stronger structured findings<br/>better retry artifacts"]
+```
 
 ## Backlog
 
