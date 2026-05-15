@@ -14,6 +14,7 @@ The OpenSpec CLI (`openspec`) provides terminal commands for project setup, vali
 | **Lifecycle** | `archive` | Finalize completed changes |
 | **Timer** | `purpose`, `timer` | Track local work time and sync Jira worklogs |
 | **OPSX Session Helpers** | `opsx track`, `opsx create-change` | Native session-aware tracking for `/opsx:explore` and `/opsx:propose` |
+| **Monitoring** | `monitoring export`, `monitoring build-site`, `monitoring serve` | Export runtime metrics, generate a static dashboard, or serve a live monitoring site |
 | **Workflow** | `status`, `instructions`, `templates`, `schemas` | Artifact-driven workflow support |
 | **Schemas** | `schema init`, `schema fork`, `schema validate`, `schema which` | Create and manage custom workflows |
 | **Config** | `config` | View and modify settings |
@@ -486,6 +487,42 @@ openspec opsx track propose review
 2. Switches timer blocks natively between `human_agent_interaction / spec` and `ai_autonomous / spec`
 3. Refuses session-aware change creation when the active session is `sync_pending`
 4. Attaches the created change back to the active session when the session is running or paused
+
+### `openspec monitoring`
+
+Export consolidated operations metrics and generate a static dashboard from the runtime and timer data already stored in the workspace.
+
+```
+openspec monitoring <subcommand>
+```
+
+**Subcommands:**
+
+| Subcommand | Description |
+|------------|-------------|
+| `export` | Emit a consolidated JSON dataset for operations monitoring |
+| `build-site` | Generate a static HTML dashboard with embedded monitoring data |
+| `serve` | Serve the dashboard locally with `monitoring-data.json` regenerated on each request |
+
+**Examples:**
+
+```bash
+openspec monitoring export
+openspec monitoring export --output demo-output/monitoring-data.json
+openspec monitoring build-site --output demo-output/operations-monitoring-site
+openspec monitoring build-site --output demo-output/operations-monitoring-site --title "OpenSpec Operations Room"
+openspec monitoring serve --port 8001
+openspec monitoring serve --host 127.0.0.1 --port 8001 --title "OpenSpec Operations Room"
+```
+
+**What it includes:**
+
+1. Session and block-level raw time by `actor_mode` and `work_kind`
+2. Windowed metrics for `7d`, `30d`, and `all time`
+3. Flow, reliability, approval, and archive-governance signals from runtime state
+4. A static site bundle with `index.html`, `app.js`, `styles.css`, and `monitoring-data.json`
+
+`monitoring serve` is the recommended local workflow when you want the dashboard to stay available and pick up active sessions on browser refresh without rebuilding the static bundle manually.
 
 ---
 

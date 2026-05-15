@@ -72,3 +72,23 @@ export async function archiveSession(session: TimerSession, projectDir = process
   await writeJson(archivePath, session);
   return archivePath;
 }
+
+export async function listArchivedSessions(projectDir = process.cwd()): Promise<TimerSession[]> {
+  try {
+    const entries = await fs.readdir(getSessionsDir(projectDir), { withFileTypes: true });
+    const sessions = await Promise.all(
+      entries
+        .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
+        .map(async (entry) => readJson<TimerSession>(path.join(getSessionsDir(projectDir), entry.name)))
+    );
+
+    return sessions
+      .filter((session): session is TimerSession => session !== null)
+      .sort((a, b) => a.started_at.localeCompare(b.started_at));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return [];
+    }
+    throw error;
+  }
+}

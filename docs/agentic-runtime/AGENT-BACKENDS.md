@@ -112,6 +112,7 @@ Best for:
 
 - local agent runners
 - Codex-style wrappers
+- Gemini CLI wrappers
 - internal tools that already know how to patch files in the workspace
 
 Runtime behavior:
@@ -241,7 +242,7 @@ Current routable roles:
 
 ## What Is Implemented Today
 
-The shared backend registry is implemented now, and `ImplementationAgent` already uses it.
+The shared backend registry is implemented now, and both `ImplementationAgent` and `CriticAgent` already use it.
 
 Supported modes today:
 
@@ -258,6 +259,84 @@ Supported modes today:
 3. invokes it or prepares a manual handoff
 4. parses structured backend output
 5. applies backend-proposed `workspace_actions` locally when policy allows
+
+`CriticAgent` now:
+
+1. builds a structured review prompt from normalized context, execution plan, and implementation report
+2. resolves a configured backend
+3. invokes it or falls back to deterministic review rules
+4. merges backend findings with deterministic findings
+5. persists backend prompt/request/response artifacts when configured
+
+## Command runner examples for `critic`
+
+Use Codex CLI for review:
+
+```json
+{
+  "agents": {
+    "routing": {
+      "implementation": "codex-cli",
+      "critic": "codex-review"
+    },
+    "backends": {
+      "codex-cli": {
+        "mode": "command",
+        "command": "node",
+        "args": ["scripts/codex-implementation-runner.mjs"],
+        "sandbox_mode": "workspace-write",
+        "implementation_mode": "direct_edit",
+        "timeout_ms": 900000
+      },
+      "codex-review": {
+        "mode": "command",
+        "command": "node",
+        "args": ["scripts/codex-review-runner.mjs"],
+        "sandbox_mode": "read-only",
+        "timeout_ms": 900000
+      }
+    }
+  }
+}
+```
+
+Use Gemini CLI for review:
+
+```json
+{
+  "agents": {
+    "routing": {
+      "implementation": "codex-cli",
+      "critic": "gemini-review"
+    },
+    "backends": {
+      "codex-cli": {
+        "mode": "command",
+        "command": "node",
+        "args": ["scripts/codex-implementation-runner.mjs"],
+        "sandbox_mode": "workspace-write",
+        "implementation_mode": "direct_edit",
+        "timeout_ms": 900000
+      },
+      "gemini-review": {
+        "mode": "command",
+        "command": "node",
+        "args": ["scripts/gemini-review-runner.mjs"],
+        "env": {
+          "OSJ_GEMINI_REVIEW_MODEL": "pro"
+        },
+        "timeout_ms": 900000
+      }
+    }
+  }
+}
+```
+
+These two review runners make `critic` symmetrical with the current Codex implementation flow:
+
+- `implementation` can keep using Codex direct-edit mode
+- `critic` can be routed independently to Codex CLI or Gemini CLI
+- switching providers only changes config, not runtime orchestration
 6. inspects the actual workspace diff afterward
 7. persists:
    - `change-report.json`

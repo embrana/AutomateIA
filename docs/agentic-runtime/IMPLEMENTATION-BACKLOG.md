@@ -1,6 +1,6 @@
 # Implementation Backlog
 
-See also: [ARCHITECTURE](./ARCHITECTURE.md), [STATE-MACHINES](./STATE-MACHINES.md), [AGENT-CONTRACTS](./AGENT-CONTRACTS.md), [AGENT-BACKENDS](./AGENT-BACKENDS.md), [AUTONOMY-POLICY](./AUTONOMY-POLICY.md), [CURRENT-IMPLEMENTATION](./CURRENT-IMPLEMENTATION.md)
+See also: [ARCHITECTURE](./ARCHITECTURE.md), [STATE-MACHINES](./STATE-MACHINES.md), [AGENT-CONTRACTS](./AGENT-CONTRACTS.md), [AGENT-BACKENDS](./AGENT-BACKENDS.md), [AUTONOMY-POLICY](./AUTONOMY-POLICY.md), [CURRENT-IMPLEMENTATION](./CURRENT-IMPLEMENTATION.md), [OPERATIONS-MONITORING-BACKLOG](./OPERATIONS-MONITORING-BACKLOG.md), [CRITIC-SMOKE-TEST-BACKLOG](./CRITIC-SMOKE-TEST-BACKLOG.md)
 
 ## Goal
 
@@ -306,6 +306,8 @@ Complete the end-to-end cell with delivery artifacts and governed archive decisi
 - outbound Jira comment publication remains a later integration step
 
 ## Phase 6. Observability And Learning
+
+See the dedicated monitoring roadmap in [OPERATIONS-MONITORING-BACKLOG](./OPERATIONS-MONITORING-BACKLOG.md). The priority order there intentionally favors dashboard visualization over deeper telemetry infrastructure.
 
 ### Outcome
 

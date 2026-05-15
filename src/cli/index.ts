@@ -40,6 +40,7 @@ import { buildBlockedArchiveComment } from '../core/timer/archive-comment.js';
 import { getActiveSession as getActiveTimerSession } from '../core/timer/store.js';
 import { RuntimeStatusCommand } from '../core/runtime/status.js';
 import { RuntimeExplainCommand } from '../core/runtime/explain.js';
+import { OperationsMonitoringCommand } from '../core/runtime/monitoring/OperationsMonitoringCommand.js';
 import { OrchestrateHeartbeatMonitor } from '../core/runtime/orchestrate-live-feedback.js';
 import { printOrchestrateTerminalSummary } from '../core/runtime/orchestrate-summary.js';
 import { SessionManager } from '../core/runtime/session/SessionManager.js';
@@ -77,6 +78,7 @@ const cliName = invokedName === 'openspec.js'
     : invokedName;
 const runtimeStatusCommand = new RuntimeStatusCommand();
 const runtimeExplainCommand = new RuntimeExplainCommand();
+const operationsMonitoringCommand = new OperationsMonitoringCommand();
 const sessionManager = new SessionManager();
 const agentOrchestrator = new AgentOrchestrator();
 const approvalManager = new ApprovalManager();
@@ -495,6 +497,10 @@ const approvalCmd = program
   .command('approval')
   .description('Inspect and resolve runtime approvals');
 
+const monitoringCmd = program
+  .command('monitoring')
+  .description('Export and visualize runtime operations monitoring data');
+
 runtimeCmd
   .command('status')
   .description('Show the current or latest OpenSpec runtime state')
@@ -695,6 +701,64 @@ approvalCmd
     try {
       const approval = await approvalManager.resolveApproval(approvalId, 'REJECTED', options.reason);
       printApproval(approval);
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+monitoringCmd
+  .command('export')
+  .description('Export a consolidated operations monitoring dataset as JSON')
+  .option('--output <path>', 'Write the dataset to a JSON file instead of stdout')
+  .option('--title <text>', 'Dashboard title to embed into the dataset')
+  .action(async (options: { output?: string; title?: string }) => {
+    try {
+      await operationsMonitoringCommand.exportData({
+        outputPath: options.output,
+        title: options.title,
+      });
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+monitoringCmd
+  .command('build-site')
+  .description('Generate a static operations monitoring site with embedded JSON data')
+  .option('--output <dir>', 'Output directory for the static site', path.join('.openspec', 'monitoring-site'))
+  .option('--title <text>', 'Dashboard title for the generated site')
+  .action(async (options: { output?: string; title?: string }) => {
+    try {
+      await operationsMonitoringCommand.buildStaticSite({
+        outputDir: options.output,
+        title: options.title,
+      });
+    } catch (error) {
+      console.log();
+      ora().fail(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+monitoringCmd
+  .command('serve')
+  .description('Serve the operations monitoring dashboard with live JSON generated on each request')
+  .option('--host <host>', 'Host interface to bind the monitoring server', '127.0.0.1')
+  .option('--port <number>', 'Port for the monitoring server', '8001')
+  .option('--title <text>', 'Dashboard title for the live site')
+  .action(async (options: { host?: string; port?: string | number; title?: string }) => {
+    try {
+      const handle = await operationsMonitoringCommand.serveSite({
+        host: options.host,
+        port: parsePositiveInteger(options.port, 8001),
+        title: options.title,
+      });
+      console.log(`Operations monitoring live server listening at ${handle.url}`);
+      console.log('Refresh the browser to pull a fresh runtime snapshot.');
     } catch (error) {
       console.log();
       ora().fail(`Error: ${(error as Error).message}`);

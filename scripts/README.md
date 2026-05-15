@@ -40,6 +40,14 @@ Validates package version consistency before publishing.
 
 Runs Codex CLI as a local `ImplementationAgent` backend and converts the final answer into structured `workspace_actions`.
 
+## codex-review-runner.mjs
+
+Runs Codex CLI as a local `CriticAgent` backend in read-only review mode and converts the final answer into structured review JSON.
+
+## gemini-review-runner.mjs
+
+Runs Gemini CLI in headless JSON mode as a local `CriticAgent` backend and converts the final answer into structured review JSON.
+
 ## configure-codex-backend.mjs
 
 Writes the global OpenSpec config entry that routes `ImplementationAgent` to the local Codex CLI runner.

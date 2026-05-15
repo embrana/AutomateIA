@@ -47,6 +47,7 @@ import { SessionManager } from '../session/SessionManager.js';
 import { StateEngine } from '../state/StateEngine.js';
 import {
   RUNTIME_LAYOUT_VERSION,
+  type ApprovalScope,
   type AgentRun,
   type AgentRunState,
   type ExecutionCycle,
@@ -92,6 +93,14 @@ const EXPECTED_NEXT_ACTION: Partial<Record<AgentName, NextAction>> = {
   implementation_agent: 'RUN_CRITIC_AGENT',
   critic_agent: 'RUN_VALIDATION_AGENT',
   validation_agent: 'RUN_DELIVERY_AGENT',
+};
+
+const APPROVAL_SCOPE_TO_STAGE: Partial<Record<ApprovalScope, OrchestrationStage>> = {
+  plan: 'planning',
+  implementation: 'implementation',
+  recovery: 'validation',
+  jira_comment: 'delivery',
+  archive: 'delivery',
 };
 
 function nowIso(): string {
@@ -166,7 +175,7 @@ export class AgentOrchestrator {
     const agent = this.agents[agentName];
     const resolved = await this.contextResolver.resolveActive();
     const cycleId = await this.prepareCycleForAgent(agentName, resolved.runtimeSnapshot);
-    const envelope = this.buildEnvelope(agentName, resolved.runtimeSnapshot, cycleId);
+    const envelope = await this.buildEnvelope(agentName, resolved.runtimeSnapshot, cycleId);
     const agentContext: AgentContext = {
       projectRoot: this.artifactManager.getProjectRoot(),
       envelope,
@@ -238,7 +247,13 @@ export class AgentOrchestrator {
       throw new Error(`Unsupported orchestration stage: ${stage}`);
     }
 
-    const startIndex = await this.determineStartIndex();
+    const resolved = await this.contextResolver.resolveActive();
+    const blockingApprovalIndex = await this.findBlockingPendingApprovalIndex(resolved.runtimeSnapshot);
+    if (blockingApprovalIndex !== null && stopIndex >= blockingApprovalIndex) {
+      return [];
+    }
+
+    const startIndex = await this.determineStartIndex(resolved.runtimeSnapshot);
     if (startIndex > stopIndex) {
       return [];
     }
@@ -260,11 +275,29 @@ export class AgentOrchestrator {
     return executed;
   }
 
-  private async determineStartIndex(): Promise<number> {
-    const resolved = await this.contextResolver.resolveActive();
-    const nextAgent = await this.inferNextAgent(resolved.runtimeSnapshot);
+  private async determineStartIndex(snapshot?: RuntimeSnapshot): Promise<number> {
+    const runtimeSnapshot = snapshot ?? (await this.contextResolver.resolveActive()).runtimeSnapshot;
+    const nextAgent = await this.inferNextAgent(runtimeSnapshot);
     const startIndex = ORCHESTRATION_PLAN.findIndex((agent) => agent === nextAgent);
     return startIndex >= 0 ? startIndex : 0;
+  }
+
+  private async findBlockingPendingApprovalIndex(snapshot: RuntimeSnapshot): Promise<number | null> {
+    const pendingApprovals = await this.approvalManager.listPendingApprovals(
+      snapshot.ticket.ticket_key,
+      snapshot.session.change_name
+    );
+    const blockingIndices = pendingApprovals
+      .map((approval) => APPROVAL_SCOPE_TO_STAGE[approval.scope])
+      .filter((stage): stage is OrchestrationStage => Boolean(stage))
+      .map((stage) => ORCHESTRATION_PLAN.findIndex((agent) => agent === `${stage}_agent`))
+      .filter((index) => index >= 0);
+
+    if (blockingIndices.length === 0) {
+      return null;
+    }
+
+    return Math.min(...blockingIndices);
   }
 
   private async inferNextAgent(snapshot: RuntimeSnapshot): Promise<AgentName> {
@@ -322,7 +355,7 @@ export class AgentOrchestrator {
     return nextAction === expected;
   }
 
-  private buildEnvelope(agentName: AgentName, snapshot: RuntimeSnapshot, cycleId: string): AgentRunEnvelope {
+  private async buildEnvelope(agentName: AgentName, snapshot: RuntimeSnapshot, cycleId: string): Promise<AgentRunEnvelope> {
     const ticketKey = snapshot.ticket.ticket_key;
     const changeName = snapshot.session.change_name;
     const inputRefs: string[] = [];
@@ -339,6 +372,16 @@ export class AgentOrchestrator {
       inputRefs.push(`openspec/changes/${changeName}/proposal.md`);
       inputRefs.push(`openspec/changes/${changeName}/tasks.md`);
       inputRefs.push(this.artifactManager.getPlanningRef(ticketKey, changeName));
+      if (agentName === 'implementation_agent') {
+        const criticRef = this.artifactManager.getCriticRef(ticketKey, changeName);
+        if (await this.artifactManager.fileExists(criticRef)) {
+          inputRefs.push(criticRef);
+        }
+        const validationRef = this.artifactManager.getValidationRef(ticketKey, changeName);
+        if (await this.artifactManager.fileExists(validationRef)) {
+          inputRefs.push(validationRef);
+        }
+      }
       if (agentName === 'critic_agent' || agentName === 'validation_agent' || agentName === 'delivery_agent') {
         inputRefs.push(this.artifactManager.getImplementationRef(ticketKey, changeName));
       }
@@ -408,9 +451,17 @@ export class AgentOrchestrator {
     }
 
     if (agentName === 'implementation_agent') {
+      const criticReport = await this.artifactManager.readJsonRef<CriticAgentOutput>(
+        this.artifactManager.getCriticRef(ticketKey, changeName)
+      );
+      const validationReport = await this.artifactManager.readJsonRef<ValidationAgentOutput>(
+        this.artifactManager.getValidationRef(ticketKey, changeName)
+      );
       const input: ImplementationAgentInput = {
         normalized_context: normalizedContext,
         execution_plan: executionPlan,
+        previous_critic_report: criticReport ?? undefined,
+        previous_validation_report: validationReport ?? undefined,
       };
       return input;
     }
@@ -707,8 +758,68 @@ export class AgentOrchestrator {
             'No findings'
           ),
           '',
+          '## Backend Invocation',
+          `- Configured: ${output.backend_invocation.configured ? 'yes' : 'no'}`,
+          `- Backend: ${output.backend_invocation.backend_name ?? 'none'}`,
+          `- Mode: ${output.backend_invocation.mode}`,
+          `- Status: ${output.backend_invocation.status}`,
+          `- Input tokens: ${
+            typeof output.backend_invocation.usage?.input_tokens === 'number'
+              ? output.backend_invocation.usage.input_tokens
+              : 'N/A'
+          }`,
+          `- Output tokens: ${
+            typeof output.backend_invocation.usage?.output_tokens === 'number'
+              ? output.backend_invocation.usage.output_tokens
+              : 'N/A'
+          }`,
+          ...formatBullets(output.backend_invocation.notes, 'No backend notes'),
+          '',
         ].join('\n');
         const mdRef = await this.artifactManager.writeChangeMarkdown(ticketKey, changeName, 'review', 'critic-report.md', markdown);
+        const backendRefs: string[] = [];
+        if (output.backend_invocation.task_prompt) {
+          backendRefs.push(
+            await this.artifactManager.writeChangeMarkdown(
+              ticketKey,
+              changeName,
+              'review',
+              'backend-prompt.md',
+              [
+                '# Critic Backend Prompt',
+                '',
+                output.backend_invocation.system_prompt
+                  ? `## System Prompt\n${output.backend_invocation.system_prompt}\n`
+                  : '',
+                '## Task Prompt',
+                output.backend_invocation.task_prompt,
+                '',
+              ].join('\n')
+            )
+          );
+        }
+        if (output.backend_invocation.request_payload) {
+          backendRefs.push(
+            await this.artifactManager.writeChangeJson(
+              ticketKey,
+              changeName,
+              'review',
+              'backend-request.json',
+              output.backend_invocation.request_payload
+            )
+          );
+        }
+        if (output.backend_invocation.response_payload !== undefined) {
+          backendRefs.push(
+            await this.artifactManager.writeChangeJson(
+              ticketKey,
+              changeName,
+              'review',
+              'backend-response.json',
+              output.backend_invocation.response_payload
+            )
+          );
+        }
 
         const refreshed = await this.contextResolver.resolveActive();
         await this.sessionManager.syncFromTimerSession(refreshed.timerSession, {
@@ -718,8 +829,8 @@ export class AgentOrchestrator {
             : 'UNDER_REVIEW',
           overrideChangeState: 'UNDER_REVIEW',
         });
-        const approvalRefs = await this.persistApprovalIfRequested('critic_agent', result, refreshed.runtimeSnapshot, [jsonRef, mdRef]);
-        return [jsonRef, mdRef, ...approvalRefs];
+        const approvalRefs = await this.persistApprovalIfRequested('critic_agent', result, refreshed.runtimeSnapshot, [jsonRef, mdRef, ...backendRefs]);
+        return [jsonRef, mdRef, ...backendRefs, ...approvalRefs];
       }
       case 'validation_agent': {
         const output = result.output as ValidationAgentOutput;
