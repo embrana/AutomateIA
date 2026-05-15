@@ -106,6 +106,26 @@ export class RuntimeStore {
     return readJsonFile<ChangeRuntime>(this.getChangeRuntimePath(ticketKey, changeName, projectDir));
   }
 
+  async listChangeRuntimes(ticketKey: string, projectDir = process.cwd()): Promise<ChangeRuntime[]> {
+    try {
+      const changesDir = this.getChangesDir(ticketKey, projectDir);
+      const entries = await fs.readdir(changesDir, { withFileTypes: true });
+      const changes = await Promise.all(
+        entries
+          .filter((entry) => entry.isDirectory())
+          .map(async (entry) => this.getChangeRuntime(ticketKey, entry.name, projectDir))
+      );
+      return changes
+        .filter((change): change is ChangeRuntime => change !== null)
+        .sort((a, b) => a.updated_at.localeCompare(b.updated_at));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        return [];
+      }
+      throw error;
+    }
+  }
+
   async getExecutionCycle(ticketKey: string, changeName: string, cycleId: string, projectDir = process.cwd()): Promise<ExecutionCycle | null> {
     return readJsonFile<ExecutionCycle>(this.getCyclePath(ticketKey, changeName, cycleId, projectDir));
   }

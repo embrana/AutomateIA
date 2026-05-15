@@ -153,6 +153,57 @@ The system produces an execution plan before implementation.
     );
   });
 
+  it('does not advance to implementation while a planning approval is still pending', async () => {
+    vi.useRealTimers();
+    fetchSpy.mockResolvedValueOnce(jsonResponse({
+      key: 'PROJ-455',
+      fields: {
+        summary: 'Block implementation until planning approval is resolved',
+        status: { name: 'In Progress' },
+        assignee: { displayName: 'Emiliano' },
+        description: {
+          type: 'doc',
+          version: 1,
+          content: [
+            {
+              type: 'paragraph',
+              content: [{ type: 'text', text: 'Need a way to inspect runtime status and maybe generate a plan.' }],
+            },
+          ],
+        },
+      },
+    }));
+
+    await purpose('PROJ-455', { importTicket: true });
+    const orchestrator = new AgentOrchestrator();
+    const planningResults = await orchestrator.orchestrateUntil('planning');
+    expect(planningResults.at(-1)?.recommended_next_action).toBe('REQUEST_HUMAN_APPROVAL');
+
+    const runtimeStore = new RuntimeStore();
+    const changeName = (await runtimeStore.getSessionRuntime('PROJ-455'))?.change_name;
+    expect(changeName).toBeTruthy();
+
+    const implementationResults = await orchestrator.orchestrateUntil('implementation');
+    expect(implementationResults).toEqual([]);
+
+    const implementationArtifact = path.join(
+      tempDir,
+      '.openspec',
+      'runtime',
+      'tickets',
+      'PROJ-455',
+      'changes',
+      changeName!,
+      'implementation',
+      'change-report.json'
+    );
+    await expect(fs.access(implementationArtifact)).rejects.toThrow();
+
+    const approvalManager = new ApprovalManager();
+    const pendingPlanApprovals = await approvalManager.listPendingApprovals('PROJ-455', changeName!, 'plan');
+    expect(pendingPlanApprovals).toHaveLength(1);
+  });
+
   it('runs the implementation, critic, and validation loop with persisted cycle state', async () => {
     vi.useRealTimers();
     await fs.mkdir(path.join(tempDir, 'src'), { recursive: true });
@@ -163,13 +214,45 @@ The system produces an execution plan before implementation.
     execSync('git add .', { cwd: tempDir, stdio: 'ignore' });
     execSync('git commit -m "Initial commit"', { cwd: tempDir, stdio: 'ignore' });
 
-    fetchSpy.mockResolvedValueOnce(jsonResponse({
-      key: 'PROJ-789',
-      fields: {
-        summary: 'Implement validation-ready runtime loop',
-        status: { name: 'In Progress' },
-        assignee: { displayName: 'Emiliano' },
-        description: `## Context
+    saveGlobalConfig({
+      featureFlags: {},
+      profile: 'core',
+      delivery: 'both',
+      jira: {
+        base_url: 'https://example.atlassian.net',
+        email: 'dev@example.com',
+        api_token: 'token',
+      },
+      worklog: {
+        rounding: 'minute',
+        min_seconds: 60,
+        comment_template: 'OpenSpec execution session',
+        track_metadata_locally: true,
+      },
+      agents: {
+        routing: {
+          implementation: 'hosted-coder',
+        },
+        backends: {
+          'hosted-coder': {
+            mode: 'openai_compatible',
+            base_url: 'https://llm.example.com',
+            model: 'gpt-test',
+            api_key_env: 'OPENAI_API_KEY',
+          },
+        },
+      },
+    });
+    process.env.OPENAI_API_KEY = 'secret-key';
+
+    fetchSpy
+      .mockResolvedValueOnce(jsonResponse({
+        key: 'PROJ-789',
+        fields: {
+          summary: 'Implement validation-ready runtime loop',
+          status: { name: 'In Progress' },
+          assignee: { displayName: 'Emiliano' },
+          description: `## Context
 
 We need a runtime loop that reaches validation with persisted artifacts.
 
@@ -185,8 +268,45 @@ The runtime stores critic and validation artifacts for the active change.
 
 - Avoid destructive repository actions in the implementation adapter.
 `,
-      },
-    }));
+        },
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                status: 'applied',
+                summary: 'Updated runtime feature and added focused coverage.',
+                files_touched: ['src/feature.ts', 'test/feature.test.ts'],
+                tests_added: ['test/feature.test.ts'],
+                limitations: [],
+                human_questions: [],
+                workspace_actions: [
+                  {
+                    type: 'replace_in_file',
+                    path: 'src/feature.ts',
+                    old: 'export const runtimeFlag = false;\n',
+                    new: 'export const runtimeFlag = true;\n',
+                  },
+                  {
+                    type: 'write_file',
+                    path: 'test/feature.test.ts',
+                    content: [
+                      "import test from 'node:test';",
+                      "import assert from 'node:assert/strict';",
+                      "import { runtimeFlag } from '../src/feature.ts';",
+                      "test('runtime loop flag', () => {",
+                      '  assert.equal(runtimeFlag, true);',
+                      '});',
+                      '',
+                    ].join('\n'),
+                  },
+                ],
+              }),
+            },
+          },
+        ],
+      }));
 
     await purpose('PROJ-789', { importTicket: true });
     const orchestrator = new AgentOrchestrator();
@@ -198,9 +318,6 @@ The runtime stores critic and validation artifacts for the active change.
     const changeName = sessionRuntime?.change_name;
     expect(changeName).toBeTruthy();
 
-    await fs.writeFile(path.join(tempDir, 'src', 'feature.ts'), 'export const runtimeFlag = true;\n', 'utf-8');
-    await fs.mkdir(path.join(tempDir, 'test'), { recursive: true });
-    await fs.writeFile(path.join(tempDir, 'test', 'feature.test.ts'), 'export const runtimeFeatureTest = true;\n', 'utf-8');
     await fs.writeFile(
       path.join(tempDir, 'openspec', 'changes', changeName!, 'tasks.md'),
       '## 1. Runtime Loop\n\n- [x] 1.1 Review ticket\n- [x] 1.2 Implement runtime loop\n- [x] 1.3 Validate runtime loop\n',
@@ -392,6 +509,237 @@ The runtime persists a prompt artifact for the implementation step.
     expect(approvals).toHaveLength(1);
   });
 
+  it('does not advance to critic while an implementation approval is still pending', async () => {
+    vi.useRealTimers();
+    saveGlobalConfig({
+      featureFlags: {},
+      profile: 'core',
+      delivery: 'both',
+      jira: {
+        base_url: 'https://example.atlassian.net',
+        email: 'dev@example.com',
+        api_token: 'token',
+      },
+      worklog: {
+        rounding: 'minute',
+        min_seconds: 60,
+        comment_template: 'OpenSpec execution session',
+        track_metadata_locally: true,
+      },
+      agents: {
+        routing: {
+          implementation: 'manual-draft',
+        },
+        backends: {
+          'manual-draft': {
+            mode: 'manual',
+            model: 'gpt-5.4-mini',
+          },
+        },
+      },
+    });
+
+    fetchSpy.mockResolvedValueOnce(jsonResponse({
+      key: 'PROJ-902',
+      fields: {
+        summary: 'Block critic until implementation approval is resolved',
+        status: { name: 'In Progress' },
+        assignee: { displayName: 'Emiliano' },
+        description: `## Context
+
+We need implementation handoff artifacts before any critic step can continue.
+
+## Acceptance Criteria
+
+### CA-1 - Prepare implementation prompt
+The runtime persists a prompt artifact for the implementation step.
+`,
+      },
+    }));
+
+    await purpose('PROJ-902', { importTicket: true });
+    const orchestrator = new AgentOrchestrator();
+    const implementationResults = await orchestrator.orchestrateUntil('implementation');
+    expect(implementationResults.at(-1)?.recommended_next_action).toBe('REQUEST_HUMAN_APPROVAL');
+
+    const runtimeStore = new RuntimeStore();
+    const changeName = (await runtimeStore.getSessionRuntime('PROJ-902'))?.change_name;
+    expect(changeName).toBeTruthy();
+
+    const criticResults = await orchestrator.orchestrateUntil('critic');
+    expect(criticResults).toEqual([]);
+
+    const criticArtifact = path.join(
+      tempDir,
+      '.openspec',
+      'runtime',
+      'tickets',
+      'PROJ-902',
+      'changes',
+      changeName!,
+      'review',
+      'critic-report.json'
+    );
+    await expect(fs.access(criticArtifact)).rejects.toThrow();
+
+    const approvalManager = new ApprovalManager();
+    const pendingImplementationApprovals = await approvalManager.listPendingApprovals('PROJ-902', changeName!, 'implementation');
+    expect(pendingImplementationApprovals).toHaveLength(1);
+  });
+
+  it('feeds prior critic and validation artifacts back into the implementation prompt on retry', async () => {
+    vi.useRealTimers();
+    saveGlobalConfig({
+      featureFlags: {},
+      profile: 'core',
+      delivery: 'both',
+      jira: {
+        base_url: 'https://example.atlassian.net',
+        email: 'dev@example.com',
+        api_token: 'token',
+      },
+      worklog: {
+        rounding: 'minute',
+        min_seconds: 60,
+        comment_template: 'OpenSpec execution session',
+        track_metadata_locally: true,
+      },
+      agents: {
+        routing: {
+          implementation: 'manual-draft',
+        },
+        backends: {
+          'manual-draft': {
+            mode: 'manual',
+            model: 'gpt-5.4-mini',
+          },
+        },
+      },
+    });
+
+    fetchSpy.mockResolvedValueOnce(jsonResponse({
+      key: 'PROJ-906',
+      fields: {
+        summary: 'Retry implementation with prior feedback',
+        status: { name: 'In Progress' },
+        assignee: { displayName: 'Emiliano' },
+        description: `## Context
+
+We need the implementation retry prompt to include critic and validation feedback.
+
+## Acceptance Criteria
+
+### CA-1 - Include prior critic feedback
+The implementation prompt summarizes the previous critic findings.
+
+### CA-2 - Include prior validation feedback
+The implementation prompt summarizes the previous validation failure.
+`,
+      },
+    }));
+
+    await purpose('PROJ-906', { importTicket: true });
+    const orchestrator = new AgentOrchestrator();
+    await orchestrator.orchestrateUntil('planning');
+
+    const runtimeStore = new RuntimeStore();
+    const changeName = (await runtimeStore.getSessionRuntime('PROJ-906'))?.change_name;
+    expect(changeName).toBeTruthy();
+
+    const criticArtifact = path.join(
+      tempDir,
+      '.openspec',
+      'runtime',
+      'tickets',
+      'PROJ-906',
+      'changes',
+      changeName!,
+      'review',
+      'critic-report.json'
+    );
+    await fs.mkdir(path.dirname(criticArtifact), { recursive: true });
+    await fs.writeFile(criticArtifact, `${JSON.stringify({
+      review_result: 'CHANGES_REQUESTED',
+      findings: [
+        {
+          severity: 'medium',
+          type: 'missing_test_coverage',
+          message: 'Previous cycle did not add focused tests.',
+        },
+      ],
+      backend_invocation: {
+        configured: false,
+        mode: 'none',
+        status: 'NOT_CONFIGURED',
+        notes: [],
+      },
+    }, null, 2)}\n`, 'utf-8');
+
+    const validationArtifact = path.join(
+      tempDir,
+      '.openspec',
+      'runtime',
+      'tickets',
+      'PROJ-906',
+      'changes',
+      changeName!,
+      'validation',
+      'validation-result.json'
+    );
+    await fs.mkdir(path.dirname(validationArtifact), { recursive: true });
+    await fs.writeFile(validationArtifact, `${JSON.stringify({
+      validation_result: 'FAILED',
+      checks: [
+        {
+          name: 'tasks_complete',
+          status: 'failed',
+          details: 'tasks.md still has incomplete items.',
+        },
+      ],
+      failure_classification: 'RETRYABLE_IMPLEMENTATION_ERROR',
+      archive_eligible: false,
+      reasons: ['tasks.md still contains incomplete items.'],
+    }, null, 2)}\n`, 'utf-8');
+
+    const results = await orchestrator.orchestrateUntil('implementation');
+    expect(results.at(-1)?.agent).toBe('implementation_agent');
+
+    const backendPromptArtifact = path.join(
+      tempDir,
+      '.openspec',
+      'runtime',
+      'tickets',
+      'PROJ-906',
+      'changes',
+      changeName!,
+      'implementation',
+      'backend-prompt.md'
+    );
+    const implementationArtifact = path.join(
+      tempDir,
+      '.openspec',
+      'runtime',
+      'tickets',
+      'PROJ-906',
+      'changes',
+      changeName!,
+      'implementation',
+      'change-report.json'
+    );
+
+    const backendPrompt = await fs.readFile(backendPromptArtifact, 'utf-8');
+    expect(backendPrompt).toContain('# Prior Critic Feedback');
+    expect(backendPrompt).toContain('Previous cycle did not add focused tests.');
+    expect(backendPrompt).toContain('# Prior Validation Feedback');
+    expect(backendPrompt).toContain('RETRYABLE_IMPLEMENTATION_ERROR');
+
+    const implementationReport = JSON.parse(await fs.readFile(implementationArtifact, 'utf-8'));
+    expect(implementationReport.backend_invocation.request_payload.metadata).toMatchObject({
+      has_previous_critic_report: true,
+      has_previous_validation_report: true,
+    });
+  });
+
   it('applies backend workspace actions locally and runs focused tests', async () => {
     vi.useRealTimers();
     await fs.mkdir(path.join(tempDir, 'src'), { recursive: true });
@@ -546,6 +894,152 @@ Implementation can run a focused test command after applying the edits.
     });
   });
 
+  it('routes critic through a dedicated backend and uses its findings to send the loop back to implementation', async () => {
+    vi.useRealTimers();
+    await fs.mkdir(path.join(tempDir, 'src'), { recursive: true });
+    await fs.writeFile(path.join(tempDir, 'src', 'critic-flow.ts'), 'export const criticFlow = true;\n', 'utf-8');
+    await fs.mkdir(path.join(tempDir, 'test'), { recursive: true });
+    await fs.writeFile(path.join(tempDir, 'test', 'critic-flow.test.ts'), 'export const criticFlowTest = true;\n', 'utf-8');
+    execSync('git init', { cwd: tempDir, stdio: 'ignore' });
+    execSync('git config user.email dev@example.com', { cwd: tempDir, stdio: 'ignore' });
+    execSync('git config user.name "OpenSpec Tests"', { cwd: tempDir, stdio: 'ignore' });
+    execSync('git add .', { cwd: tempDir, stdio: 'ignore' });
+    execSync('git commit -m "Initial commit"', { cwd: tempDir, stdio: 'ignore' });
+
+    saveGlobalConfig({
+      featureFlags: {},
+      profile: 'core',
+      delivery: 'both',
+      jira: {
+        base_url: 'https://example.atlassian.net',
+        email: 'dev@example.com',
+        api_token: 'token',
+      },
+      worklog: {
+        rounding: 'minute',
+        min_seconds: 60,
+        comment_template: 'OpenSpec execution session',
+        track_metadata_locally: true,
+      },
+      agents: {
+        routing: {
+          critic: 'gemini-review',
+        },
+        backends: {
+          'gemini-review': {
+            mode: 'openai_compatible',
+            base_url: 'https://llm.example.com',
+            model: 'gemini-reviewer',
+            api_key_env: 'OPENAI_API_KEY',
+          },
+        },
+      },
+    });
+    process.env.OPENAI_API_KEY = 'secret-key';
+
+    fetchSpy
+      .mockResolvedValueOnce(jsonResponse({
+        key: 'PROJ-907',
+        fields: {
+          summary: 'Use separate critic backend',
+          status: { name: 'In Progress' },
+          assignee: { displayName: 'Emiliano' },
+          description: `## Context
+
+We want a dedicated critic backend that can send the loop back to implementation.
+
+## Acceptance Criteria
+
+### CA-1 - Dedicated critic backend
+The critic agent can invoke its own configured backend.
+`,
+        },
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                review_result: 'CHANGES_REQUESTED',
+                findings: [
+                  {
+                    severity: 'medium',
+                    type: 'semantic_gap',
+                    file: 'src/critic-flow.ts',
+                    message: 'Implementation did not cover the edge case described in the acceptance criteria.',
+                  },
+                ],
+                human_questions: [],
+                limitations: [],
+              }),
+            },
+          },
+        ],
+      }));
+
+    await purpose('PROJ-907', { importTicket: true });
+    const orchestrator = new AgentOrchestrator();
+    await orchestrator.orchestrateUntil('planning');
+
+    const runtimeStore = new RuntimeStore();
+    const changeName = (await runtimeStore.getSessionRuntime('PROJ-907'))?.change_name;
+    expect(changeName).toBeTruthy();
+
+    await fs.writeFile(
+      path.join(tempDir, 'openspec', 'changes', changeName!, 'tasks.md'),
+      '## 1. Critic Flow\n\n- [x] 1.1 Inspect change\n- [x] 1.2 Implement baseline\n- [x] 1.3 Add tests\n',
+      'utf-8'
+    );
+    await fs.writeFile(path.join(tempDir, 'src', 'critic-flow.ts'), 'export const criticFlow = false;\n', 'utf-8');
+
+    const results = await orchestrator.orchestrateUntil('critic');
+    expect(results.map((item) => item.agent)).toEqual([
+      'implementation_agent',
+      'critic_agent',
+    ]);
+    expect(results.at(-1)?.recommended_next_action).toBe('RUN_IMPLEMENTATION_AGENT');
+
+    const criticArtifact = path.join(
+      tempDir,
+      '.openspec',
+      'runtime',
+      'tickets',
+      'PROJ-907',
+      'changes',
+      changeName!,
+      'review',
+      'critic-report.json'
+    );
+    const criticPromptArtifact = path.join(
+      tempDir,
+      '.openspec',
+      'runtime',
+      'tickets',
+      'PROJ-907',
+      'changes',
+      changeName!,
+      'review',
+      'backend-prompt.md'
+    );
+
+    expect(JSON.parse(await fs.readFile(criticArtifact, 'utf-8'))).toMatchObject({
+      review_result: 'CHANGES_REQUESTED',
+      findings: expect.arrayContaining([
+        expect.objectContaining({
+          type: 'semantic_gap',
+          file: 'src/critic-flow.ts',
+        }),
+      ]),
+      backend_invocation: {
+        configured: true,
+        backend_name: 'gemini-review',
+        mode: 'openai_compatible',
+        status: 'EXECUTED',
+      },
+    });
+    expect(await fs.readFile(criticPromptArtifact, 'utf-8')).toContain('# Critic Backend Prompt');
+  });
+
   it('runs delivery, creates archive approval, and resumes archive readiness after approval', async () => {
     vi.useRealTimers();
     await fs.mkdir(path.join(tempDir, 'src'), { recursive: true });
@@ -556,13 +1050,45 @@ Implementation can run a focused test command after applying the edits.
     execSync('git add .', { cwd: tempDir, stdio: 'ignore' });
     execSync('git commit -m "Initial commit"', { cwd: tempDir, stdio: 'ignore' });
 
-    fetchSpy.mockResolvedValueOnce(jsonResponse({
-      key: 'PROJ-900',
-      fields: {
-        summary: 'Prepare governed archive delivery runtime',
-        status: { name: 'In Progress' },
-        assignee: { displayName: 'Emiliano' },
-        description: `## Context
+    saveGlobalConfig({
+      featureFlags: {},
+      profile: 'core',
+      delivery: 'both',
+      jira: {
+        base_url: 'https://example.atlassian.net',
+        email: 'dev@example.com',
+        api_token: 'token',
+      },
+      worklog: {
+        rounding: 'minute',
+        min_seconds: 60,
+        comment_template: 'OpenSpec execution session',
+        track_metadata_locally: true,
+      },
+      agents: {
+        routing: {
+          implementation: 'hosted-coder',
+        },
+        backends: {
+          'hosted-coder': {
+            mode: 'openai_compatible',
+            base_url: 'https://llm.example.com',
+            model: 'gpt-test',
+            api_key_env: 'OPENAI_API_KEY',
+          },
+        },
+      },
+    });
+    process.env.OPENAI_API_KEY = 'secret-key';
+
+    fetchSpy
+      .mockResolvedValueOnce(jsonResponse({
+        key: 'PROJ-900',
+        fields: {
+          summary: 'Prepare governed archive delivery runtime',
+          status: { name: 'In Progress' },
+          assignee: { displayName: 'Emiliano' },
+          description: `## Context
 
 We need governed archive delivery with explicit approvals.
 
@@ -578,8 +1104,45 @@ The runtime creates an approval artifact before archive when autonomy is assiste
 
 - Worklog evidence must survive even when archive is blocked.
 `,
-      },
-    }));
+        },
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                status: 'applied',
+                summary: 'Updated delivery runtime and added focused delivery coverage.',
+                files_touched: ['src/delivery.ts', 'test/delivery.test.ts'],
+                tests_added: ['test/delivery.test.ts'],
+                limitations: [],
+                human_questions: [],
+                workspace_actions: [
+                  {
+                    type: 'replace_in_file',
+                    path: 'src/delivery.ts',
+                    old: 'export const deliveryFlag = false;\n',
+                    new: 'export const deliveryFlag = true;\n',
+                  },
+                  {
+                    type: 'write_file',
+                    path: 'test/delivery.test.ts',
+                    content: [
+                      "import test from 'node:test';",
+                      "import assert from 'node:assert/strict';",
+                      "import { deliveryFlag } from '../src/delivery.ts';",
+                      "test('delivery flag', () => {",
+                      '  assert.equal(deliveryFlag, true);',
+                      '});',
+                      '',
+                    ].join('\n'),
+                  },
+                ],
+              }),
+            },
+          },
+        ],
+      }));
 
     await purpose('PROJ-900', { importTicket: true });
     const orchestrator = new AgentOrchestrator();
@@ -590,9 +1153,6 @@ The runtime creates an approval artifact before archive when autonomy is assiste
     const changeName = (await runtimeStore.getSessionRuntime('PROJ-900'))?.change_name;
     expect(changeName).toBeTruthy();
 
-    await fs.writeFile(path.join(tempDir, 'src', 'delivery.ts'), 'export const deliveryFlag = true;\n', 'utf-8');
-    await fs.mkdir(path.join(tempDir, 'test'), { recursive: true });
-    await fs.writeFile(path.join(tempDir, 'test', 'delivery.test.ts'), 'export const deliveryTest = true;\n', 'utf-8');
     await fs.writeFile(
       path.join(tempDir, 'openspec', 'changes', changeName!, 'tasks.md'),
       '## 1. Governed Closeout\n\n- [x] 1.1 Prepare closure\n- [x] 1.2 Validate change\n- [x] 1.3 Request archive approval\n',
@@ -761,5 +1321,115 @@ The implementation budget excludes files created under the active change scaffol
     });
     expect(implementationReport.scope_assessment.changed_files_count).toBeLessThanOrEqual(1);
     expect(implementationReport.scope_assessment.diff_lines).toBeLessThan(800);
+  });
+
+  it('ignores pre-existing dirty workspace changes when evaluating implementation scope', async () => {
+    vi.useRealTimers();
+    await fs.mkdir(path.join(tempDir, 'src'), { recursive: true });
+    await fs.writeFile(path.join(tempDir, 'src', 'existing.ts'), 'export const existingFlag = false;\n', 'utf-8');
+    execSync('git init', { cwd: tempDir, stdio: 'ignore' });
+    execSync('git config user.email dev@example.com', { cwd: tempDir, stdio: 'ignore' });
+    execSync('git config user.name "OpenSpec Tests"', { cwd: tempDir, stdio: 'ignore' });
+    execSync('git add .', { cwd: tempDir, stdio: 'ignore' });
+    execSync('git commit -m "Initial commit"', { cwd: tempDir, stdio: 'ignore' });
+
+    saveGlobalConfig({
+      featureFlags: {},
+      profile: 'core',
+      delivery: 'both',
+      jira: {
+        base_url: 'https://example.atlassian.net',
+        email: 'dev@example.com',
+        api_token: 'token',
+      },
+      worklog: {
+        rounding: 'minute',
+        min_seconds: 60,
+        comment_template: 'OpenSpec execution session',
+        track_metadata_locally: true,
+      },
+      agents: {
+        default_backend: 'implementation-api',
+        backends: {
+          'implementation-api': {
+            mode: 'openai_compatible',
+            base_url: 'https://example.com',
+            model: 'gpt-test',
+            api_key_env: 'OPENAI_API_KEY',
+          },
+        },
+      },
+    });
+    process.env.OPENAI_API_KEY = 'secret-key';
+
+    fetchSpy
+      .mockResolvedValueOnce(jsonResponse({
+        key: 'PROJ-904',
+        fields: {
+          summary: 'Ignore pre-existing dirty workspace changes',
+          status: { name: 'In Progress' },
+          assignee: { displayName: 'Emiliano' },
+          description: `## Context
+
+The runtime should evaluate implementation scope only against changes created during the active cycle.
+
+## Acceptance Criteria
+
+### CA-1 - Ignore prior dirty files
+Previously dirty workspace files are excluded from implementation scope unless the current run changes them again.
+`,
+        },
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                status: 'drafted',
+                summary: 'No code changes proposed.',
+                files_touched: [],
+                tests_added: [],
+                limitations: [],
+                human_questions: [],
+                workspace_actions: [],
+              }),
+            },
+          },
+        ],
+      }));
+
+    await purpose('PROJ-904', { importTicket: true });
+    const orchestrator = new AgentOrchestrator();
+    await orchestrator.orchestrateUntil('planning');
+
+    const runtimeStore = new RuntimeStore();
+    const changeName = (await runtimeStore.getSessionRuntime('PROJ-904'))?.change_name;
+    expect(changeName).toBeTruthy();
+
+    await fs.writeFile(path.join(tempDir, 'src', 'existing.ts'), 'export const existingFlag = true;\n', 'utf-8');
+
+    const results = await orchestrator.orchestrateUntil('implementation');
+    const implementation = results.at(-1);
+    expect(implementation?.agent).toBe('implementation_agent');
+    expect(implementation?.status).toBe('SUCCEEDED');
+
+    const implementationArtifact = path.join(
+      tempDir,
+      '.openspec',
+      'runtime',
+      'tickets',
+      'PROJ-904',
+      'changes',
+      changeName!,
+      'implementation',
+      'change-report.json'
+    );
+    const implementationReport = JSON.parse(await fs.readFile(implementationArtifact, 'utf-8'));
+    expect(implementationReport.changes_applied).toEqual([]);
+    expect(implementationReport.scope_assessment).toMatchObject({
+      changed_files_count: 0,
+      diff_lines: 0,
+      requires_human_approval: false,
+    });
   });
 });
