@@ -23,6 +23,10 @@
 
 </details>
 <p></p>
+
+> [!IMPORTANT]
+> This repository is a modified OpenSpec framework fork. It extends the upstream workflow with the `osj` Jira/Tempo runtime, OPSX session governance, agentic delivery orchestration, and local operations monitoring surfaces.
+
 Our philosophy:
 
 ```text

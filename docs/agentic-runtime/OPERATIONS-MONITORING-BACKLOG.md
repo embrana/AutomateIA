@@ -28,6 +28,20 @@ Priority order:
 3. thresholds, alerts, and weekly operational reporting
 4. external integrations for full lead-time and business-level analytics
 
+## Monitoring Delivery Flow
+
+```mermaid
+flowchart LR
+    A["Runtime artifacts"] --> D["Derived metrics export"]
+    B["Timer sessions / blocks"] --> D
+    C["Approvals / validation / delivery"] --> D
+    D --> E["Operations Overview"]
+    D --> F["Capacity and Focus"]
+    D --> G["Flow Efficiency"]
+    D --> H["Reliability and Governance"]
+    D --> I["Human and AI Collaboration"]
+```
+
 ## Data Already Available Now
 
 The current repository already captures enough signal for a strong first monitoring layer.
@@ -98,6 +112,20 @@ Important rule:
 ## P0 Backlog: Visualization-First Quick Wins
 
 These items should be delivered before building a heavy telemetry platform.
+
+```mermaid
+flowchart TD
+    A["OM-001<br/>Derived export"] --> B["OM-002<br/>Operations Overview"]
+    A --> C["OM-003<br/>Capacity and Focus"]
+    A --> D["OM-004<br/>Flow Efficiency"]
+    A --> E["OM-005<br/>Reliability and Governance"]
+    A --> F["OM-006<br/>Human and AI Collaboration"]
+    B --> G["P1 hardening"]
+    C --> G
+    D --> G
+    E --> G
+    F --> G
+```
 
 ### OM-001: Derived Operations Metrics Export
 

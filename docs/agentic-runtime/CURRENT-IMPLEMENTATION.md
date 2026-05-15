@@ -24,6 +24,27 @@ The repository already supports a visible multi-agent runtime slice over an acti
 12. `osj approval show|accept|reject` exposes human checkpoints as runtime artifacts.
 13. `osj orchestrate --until delivery` runs the whole current slice through governed closeout.
 
+## Current Runtime Flow
+
+```mermaid
+flowchart TD
+    A["osj purpose / timer start"] --> B["osj opsx track explore / propose"]
+    B --> C["ContextAgent"]
+    C --> D["SpecAgent"]
+    D --> E["PlanningAgent"]
+    E --> F{"Approval required?"}
+    F -- "yes" --> G["Approval artifact"]
+    F -- "no" --> H["ImplementationAgent"]
+    G --> H
+    H --> I["CriticAgent"]
+    I --> J["ValidationAgent"]
+    J --> K{"Passed?"}
+    K -- "retry" --> H
+    K -- "escalate" --> G
+    K -- "passed" --> L["DeliveryAgent"]
+    L --> M["Archive / worklog governance"]
+```
+
 ## Commands Available Now
 
 ```text
@@ -128,6 +149,7 @@ Current nuance:
 - Reviews the implementation report against the plan and normalized context.
 - Flags blocking issues such as missing implementation, unresolved ambiguities, missing test coverage, or policy violations.
 - Produces `critic-report.json` and `critic-report.md`.
+- Can now route through dedicated reviewer backends, including Codex CLI and Gemini CLI command adapters, while keeping deterministic fallback findings.
 
 ### Validation Agent
 
@@ -173,6 +195,18 @@ Current nuance:
   - `FAILED_RETRYABLE`
   - `FAILED_ESCALATED`
 - Delivery runs after the cycle is terminal and does not create a new execution cycle.
+
+```mermaid
+stateDiagram-v2
+    [*] --> QUEUED
+    QUEUED --> RUNNING: implementation
+    RUNNING --> UNDER_REVIEW: implementation_done
+    UNDER_REVIEW --> VALIDATING: critic_done
+    VALIDATING --> FAILED_RETRYABLE: retryable_failure
+    FAILED_RETRYABLE --> RUNNING: retry
+    VALIDATING --> FAILED_ESCALATED: approval_or_policy_stop
+    VALIDATING --> PASSED: validation_passed
+```
 
 ## Archive Governance Implemented Today
 
