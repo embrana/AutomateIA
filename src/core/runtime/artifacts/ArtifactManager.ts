@@ -85,6 +85,26 @@ export class ArtifactManager {
     return this.toProjectRelative(path.join(this.runtimeStore.getChangeDir(ticketKey, changeName, this.projectRoot), 'context', 'normalized-context.json'));
   }
 
+  getProjectEvidenceRef(ticketKey: string): string {
+    return this.toProjectRelative(path.join(this.runtimeStore.getTicketDir(ticketKey, this.projectRoot), 'discovery', 'project-evidence.json'));
+  }
+
+  getRootSpecRef(ticketKey: string): string {
+    return this.toProjectRelative(path.join(this.runtimeStore.getTicketDir(ticketKey, this.projectRoot), 'discovery', 'root-spec.md'));
+  }
+
+  getRootSpecMetadataRef(ticketKey: string): string {
+    return this.toProjectRelative(path.join(this.runtimeStore.getTicketDir(ticketKey, this.projectRoot), 'discovery', 'root-spec-metadata.json'));
+  }
+
+  getRootSpecReviewRef(ticketKey: string): string {
+    return this.toProjectRelative(path.join(this.runtimeStore.getTicketDir(ticketKey, this.projectRoot), 'discovery', 'root-spec-review.json'));
+  }
+
+  getChangeNameHintRef(ticketKey: string): string {
+    return this.toProjectRelative(path.join(this.runtimeStore.getTicketDir(ticketKey, this.projectRoot), 'discovery', 'change-name-hint.json'));
+  }
+
   getPlanningRef(ticketKey: string, changeName: string): string {
     return this.toProjectRelative(path.join(this.runtimeStore.getChangeDir(ticketKey, changeName, this.projectRoot), 'planning', 'execution-plan.json'));
   }

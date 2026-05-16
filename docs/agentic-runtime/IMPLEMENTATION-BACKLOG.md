@@ -1,6 +1,6 @@
 # Implementation Backlog
 
-See also: [ARCHITECTURE](./ARCHITECTURE.md), [STATE-MACHINES](./STATE-MACHINES.md), [AGENT-CONTRACTS](./AGENT-CONTRACTS.md), [AGENT-BACKENDS](./AGENT-BACKENDS.md), [AUTONOMY-POLICY](./AUTONOMY-POLICY.md), [CURRENT-IMPLEMENTATION](./CURRENT-IMPLEMENTATION.md), [OPERATIONS-MONITORING-BACKLOG](./OPERATIONS-MONITORING-BACKLOG.md), [CRITIC-SMOKE-TEST-BACKLOG](./CRITIC-SMOKE-TEST-BACKLOG.md)
+See also: [ARCHITECTURE](./ARCHITECTURE.md), [STATE-MACHINES](./STATE-MACHINES.md), [AGENT-CONTRACTS](./AGENT-CONTRACTS.md), [AGENT-BACKENDS](./AGENT-BACKENDS.md), [AUTONOMY-POLICY](./AUTONOMY-POLICY.md), [CURRENT-IMPLEMENTATION](./CURRENT-IMPLEMENTATION.md), [AGENTIC-FLOW](./AGENTIC-FLOW.md), [ROOT-SPEC-RUNTIME-DESIGN](./ROOT-SPEC-RUNTIME-DESIGN.md), [OPERATIONS-MONITORING-BACKLOG](./OPERATIONS-MONITORING-BACKLOG.md), [CRITIC-SMOKE-TEST-BACKLOG](./CRITIC-SMOKE-TEST-BACKLOG.md)
 
 ## Goal
 
@@ -83,6 +83,32 @@ Current repository status after the first seven runtime PRs:
 - Phase 5 is partially implemented through `DeliveryAgent`, approvals, and archive governance.
 - OPSX session-aware CLI helpers are implemented as a governance bridge between chat workflows and runtime state.
 - Phase 6 remains future work.
+
+## New Proposed Phase: Root Spec Discovery Loop
+
+Status: proposed
+
+Reference: [ROOT-SPEC-RUNTIME-DESIGN](./ROOT-SPEC-RUNTIME-DESIGN.md)
+
+### Outcome
+
+Introduce a root `spec.md` generation and review loop between imported ticket context and derived OpenSpec artifacts.
+
+### Scope
+
+- add `ProjectEvidenceResolverAgent`
+- add `RootSpecAuthorAgent`
+- add `RootSpecCriticAgent`
+- add discovery runtime artifacts under `.openspec/runtime/tickets/<ticket>/discovery/`
+- refactor the current spec stage into artifact expansion from an approved root spec
+- integrate the loop into `opsx` and `osj orchestrate`
+
+### Done when
+
+- the runtime can produce one business-facing root `spec.md`
+- technical TBDs can be resolved from repo evidence where safe
+- business TBDs are surfaced explicitly for human clarification
+- planning starts from approved root spec artifacts rather than directly from raw Jira text
 
 ## Phase 1. Runtime Formalization
 

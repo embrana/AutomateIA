@@ -425,8 +425,11 @@ That means the other agents can connect through:
 
 Current status:
 
-- `ContextAgent`, `SpecAgent`, `PlanningAgent`, `CriticAgent`, `ValidationAgent`, and `DeliveryAgent` still use local deterministic logic today
-- the shared backend abstraction is already ready for them
+- `ImplementationAgent` is the primary workspace-execution adapter and already uses the shared backend registry
+- `CriticAgent` can already route through dedicated reviewer backends while keeping deterministic fallback findings
+- `RootSpecAuthorAgent` and `RootSpecCriticAgent` are now backend-routable as part of the discovery loop
+- `ProjectEvidenceResolverAgent` can also participate in backend routing where configured
+- `ContextAgent`, `SpecAgent`, `PlanningAgent`, `ValidationAgent`, and `DeliveryAgent` remain deterministic-first today
 
 ## Recommendations
 

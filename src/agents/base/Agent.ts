@@ -5,6 +5,9 @@ import type { SessionManager } from '../../core/runtime/session/SessionManager.j
 
 export type AgentName =
   | 'context_agent'
+  | 'project_evidence_resolver_agent'
+  | 'root_spec_author_agent'
+  | 'root_spec_critic_agent'
   | 'spec_agent'
   | 'planning_agent'
   | 'implementation_agent'
@@ -14,6 +17,9 @@ export type AgentName =
 
 export type NextAction =
   | 'RUN_CONTEXT_AGENT'
+  | 'RUN_PROJECT_EVIDENCE_RESOLVER_AGENT'
+  | 'RUN_ROOT_SPEC_AUTHOR_AGENT'
+  | 'RUN_ROOT_SPEC_CRITIC_AGENT'
   | 'RUN_SPEC_AGENT'
   | 'RUN_PLANNING_AGENT'
   | 'RUN_IMPLEMENTATION_AGENT'

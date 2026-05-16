@@ -1,6 +1,6 @@
 # Agentic Development Runtime Architecture
 
-See also: [STATE-MACHINES](./STATE-MACHINES.md), [AGENT-CONTRACTS](./AGENT-CONTRACTS.md), [AGENT-BACKENDS](./AGENT-BACKENDS.md), [AUTONOMY-POLICY](./AUTONOMY-POLICY.md), [IMPLEMENTATION-BACKLOG](./IMPLEMENTATION-BACKLOG.md), [CURRENT-IMPLEMENTATION](./CURRENT-IMPLEMENTATION.md)
+See also: [AGENTIC-FLOW](./AGENTIC-FLOW.md), [STATE-MACHINES](./STATE-MACHINES.md), [AGENT-CONTRACTS](./AGENT-CONTRACTS.md), [AGENT-BACKENDS](./AGENT-BACKENDS.md), [AUTONOMY-POLICY](./AUTONOMY-POLICY.md), [IMPLEMENTATION-BACKLOG](./IMPLEMENTATION-BACKLOG.md), [CURRENT-IMPLEMENTATION](./CURRENT-IMPLEMENTATION.md)
 
 ## Intent
 
@@ -30,23 +30,28 @@ The runtime architecture below treats those modules as compatibility anchors and
 
 ## Current Implementation Status
 
-The repository has already landed the first visible runtime slice:
+The repository has already landed a broader runtime slice than the original implementation plan:
 
 - runtime state is formalized under `.openspec/runtime/`
 - session, ticket, and change state are bridged from the existing timer flow
 - `osj runtime explain` is available as a runtime inspection surface
 - native `osj opsx track ...` and `osj opsx create-change ...` helpers bridge generated `/opsx` workflows back into runtime-governed session state
-- `ContextAgent`, `SpecAgent`, and `PlanningAgent` are implemented
-- `ImplementationAgent`, `CriticAgent`, and `ValidationAgent` are implemented as runtime adapters
-- `ImplementationAgent` now supports provider-agnostic backend routing through API, local command, or manual handoff modes
+- the discovery layer is now implemented:
+  - `ContextAgent`
+  - `ProjectEvidenceResolverAgent`
+  - `RootSpecAuthorAgent`
+  - `RootSpecCriticAgent`
+- `SpecAgent` now expands change artifacts from an accepted root spec instead of always scaffolding directly from imported ticket context
+- `PlanningAgent`, `ImplementationAgent`, `CriticAgent`, `ValidationAgent`, and `DeliveryAgent` are implemented
+- `ImplementationAgent` supports provider-agnostic backend routing through API, local command, or manual handoff modes
 - execution cycles are persisted per change
 - CLI orchestration currently reaches `delivery`
 
-What is not landed yet:
+What is still not landed:
 
-- backend routing for the other agents
-- formal event bus and telemetry modules
+- a formal event bus and richer telemetry modules
 - runtime graph commands and full auto orchestration
+- deeper semantic validation beyond the current deterministic validation layer
 
 ## North Star
 
@@ -66,18 +71,26 @@ The target system is an **Agentic Development Runtime** for Jira-driven software
 ```mermaid
 flowchart LR
     A["Jira Ticket"] --> B["SessionRuntime"]
-    B --> C["ChangeRuntime"]
-    C --> D["ExecutionCycle"]
-    D --> E["ImplementationAgent"]
-    E --> F["CriticAgent"]
-    F --> G["ValidationAgent"]
-    G --> H["DeliveryAgent"]
-    H --> I["Archive / Jira worklog"]
-    B --> J["TelemetryManager"]
-    C --> J
-    D --> J
-    E --> K["AgentBackendRegistry"]
-    F --> K
+    B --> C["ContextAgent"]
+    C --> D["ProjectEvidenceResolverAgent"]
+    D --> E["RootSpecAuthorAgent"]
+    E --> F["RootSpecCriticAgent"]
+    F --> G["ChangeRuntime / SpecAgent"]
+    G --> H["PlanningAgent"]
+    H --> I["ExecutionCycle"]
+    I --> J["ImplementationAgent"]
+    J --> K["CriticAgent"]
+    K --> L["ValidationAgent"]
+    L --> M["DeliveryAgent"]
+    M --> N["Archive / Jira worklog"]
+    B --> O["TelemetryManager"]
+    G --> O
+    I --> O
+    D --> P["AgentBackendRegistry"]
+    E --> P
+    F --> P
+    J --> P
+    K --> P
 ```
 
 ## Design Principles
@@ -140,21 +153,33 @@ The generated `/opsx:explore` and `/opsx:propose` workflows should not bypass ru
 The current bridge is:
 
 - `/opsx:explore` -> `osj opsx track explore --json`
-- `/opsx:propose` -> `osj opsx track propose discovery --json`
+- `/opsx:propose` discovery -> `osj opsx track propose discovery --json`
 - `/opsx:propose` change creation -> `osj opsx create-change <name>`
 - `/opsx:propose` generation/review phases -> `osj opsx track propose generation|review`
 
-This keeps prompt-driven UX while moving timer classification, imported-ticket reuse, and session/change linkage into the CLI/runtime boundary instead of leaving them as prompt-only conventions.
+The important architectural change is that `osj opsx create-change <name>` is now session-aware. In a Jira-backed session it:
+
+1. optionally persists a discovery-side `change-name-hint.json`
+2. orchestrates through:
+   - `context`
+   - `project-evidence`
+   - `root-spec`
+   - `root-spec-review`
+   - `spec`
+3. returns control to OPSX review tracking after the autonomous generation slice
+
+This keeps prompt-driven UX while moving timer classification, imported-ticket reuse, discovery artifacts, and session/change linkage into the CLI/runtime boundary instead of leaving them as prompt-only conventions.
 
 ```mermaid
 flowchart TD
     A["/opsx-explore"] --> B["osj opsx track explore"]
     C["/opsx-propose"] --> D["osj opsx track propose discovery"]
     D --> E["osj opsx create-change"]
-    E --> F["osj opsx track propose generation"]
-    F --> G["osj opsx track propose review"]
-    B --> H["Session timer blocks"]
-    G --> H
+    E --> F["context -> project-evidence -> root-spec -> root-spec-review -> spec"]
+    F --> G["osj opsx track propose generation"]
+    G --> H["osj opsx track propose review"]
+    B --> I["Session timer blocks"]
+    H --> I
 ```
 
 ### `StateEngine`
@@ -295,27 +320,35 @@ This keeps the first implementation phases small and reversible.
 ```mermaid
 flowchart TD
     A["Jira ticket selected"] --> B["SessionManager opens session"]
-    B --> C["Context Agent"]
+    B --> C["ContextAgent"]
     C --> D["Normalized context artifact"]
-    D --> E["Spec Agent"]
-    E --> F["OpenSpec change artifacts ready"]
-    F --> G["Planning Agent"]
-    G --> H{"Approval required?"}
-    H -->|"Yes"| I["Approval request"]
-    H -->|"No"| J["Implementation Agent"]
-    I --> J
-    J --> K["Critic Agent"]
-    K --> L["Validation Agent"]
-    L --> M{"Validation passed?"}
-    M -->|"No, retryable"| J
-    M -->|"No, ambiguous or risky"| N["Human escalation"]
-    M -->|"Yes"| O["Delivery Agent"]
-    O --> P{"Archive allowed?"}
-    P -->|"Yes"| Q["Archive change"]
-    P -->|"No"| R["Keep change open"]
-    Q --> S["Sync Jira worklog/comment"]
-    R --> S
-    S --> T["Close session and persist metrics"]
+    D --> E["ProjectEvidenceResolverAgent"]
+    E --> F["project-evidence artifacts"]
+    F --> G["RootSpecAuthorAgent"]
+    G --> H["root-spec.md"]
+    H --> I["RootSpecCriticAgent"]
+    I --> J{"Root spec acceptable?"}
+    J -->|"No, technical TBDs"| E
+    J -->|"No, business clarification"| K["Approval request / clarification"]
+    J -->|"Yes"| L["SpecAgent"]
+    K --> G
+    L --> M["OpenSpec change artifacts ready"]
+    M --> N["PlanningAgent"]
+    N --> O{"Approval required?"}
+    O -->|"Yes"| K
+    O -->|"No"| P["ImplementationAgent"]
+    P --> Q["CriticAgent"]
+    Q --> R["ValidationAgent"]
+    R --> S{"Validation passed?"}
+    S -->|"No, retryable"| P
+    S -->|"No, ambiguous or risky"| K
+    S -->|"Yes"| T["DeliveryAgent"]
+    T --> U{"Archive allowed?"}
+    U -->|"Yes"| V["Archive change"]
+    U -->|"No"| W["Keep change open"]
+    V --> X["Sync Jira worklog/comment"]
+    W --> X
+    X --> Y["Close session and persist metrics"]
 ```
 
 ## CLI Surface
@@ -357,16 +390,20 @@ OPSX chat workflows should prefer thin wrappers over these CLI/runtime commands 
 - It does not require immediate database adoption.
 - It does not require full autonomy from day one. The default operating mode is governed, assisted autonomy.
 
-## Definition Of A Successful First Implementation
+## Definition Of The Current Successful Slice
 
-The first meaningful milestone is a **runtime-aware multi-agent loop** with:
+The current meaningful milestone is a **runtime-aware multi-agent loop with governed discovery**:
 
 - formal runtime state
-- context pack generation
+- normalized context generation
+- repository-backed evidence generation
+- prompt-driven root spec generation
+- root spec review and clarification loop
+- OpenSpec change expansion from the root spec
 - planning artifact generation
 - implementation run adapter
 - critic report
 - validation result
 - archive-readiness decision
 
-Once those artifacts exist and can be inspected from the CLI, the runtime is visible enough for phased delivery.
+Those artifacts now exist and can be inspected from the CLI, which makes the runtime visible enough for continued phased delivery.

@@ -18,6 +18,10 @@ export interface CreateChangeFromTicketOptions {
   schema?: string;
 }
 
+export interface CreateChangeFromRootSpecOptions extends CreateChangeFromTicketOptions {
+  rootSpecPath?: string;
+}
+
 export interface AcceptanceCriterion {
   id: string;
   title: string;
@@ -254,6 +258,42 @@ ${ticket.summary || `Implement ${ticket.key}`}.
 `;
 }
 
+function buildProposalFromStructuredSpec(
+  ticket: ImportedJiraTicket,
+  changeName: string,
+  structured: StructuredSdd
+): string {
+  const capabilities = structured.acceptanceCriteria.length > 0
+    ? structured.acceptanceCriteria.map((criterion) => `- ${criterion.id}: ${criterion.title}`).join('\n')
+    : '- TBD: acceptance criteria require further refinement.';
+
+  return `## Why
+
+Imported from Jira issue [${ticket.key}](${ticket.url}) and expanded from the root discovery spec.
+
+${structured.context || ticket.description_text || 'No Jira description provided.'}
+
+## What Changes
+
+${structured.title || ticket.summary || `Implement ${ticket.key}`}.
+
+${structured.goals ? `Goals:\n\n${structured.goals}\n` : ''}
+## Capabilities
+
+### New Capabilities
+${capabilities}
+
+### Modified Capabilities
+- None identified from the imported discovery spec. Update this section if the feature changes an existing capability.
+
+## Impact
+
+- Jira: [${ticket.key}](${ticket.url})
+- Status: ${ticket.status || 'Unknown'}
+- Assignee: ${formatOptional(ticket.assignee)}
+`;
+}
+
 function descriptionLooksLikeDeltaSpec(description: string): boolean {
   return /^##\s+(ADDED|MODIFIED|REMOVED|RENAMED)\s+Requirements/m.test(description);
 }
@@ -326,6 +366,23 @@ ${acceptanceTasks}
 `;
 }
 
+function buildTasksFromStructuredSpec(structured: StructuredSdd, ticket: ImportedJiraTicket): string {
+  const acceptanceTasks = structured.acceptanceCriteria.length
+    ? `\n## 2. Acceptance Criteria Coverage\n\n${structured.acceptanceCriteria
+        .map((criterion, index) => `- [ ] 2.${index + 1} Implement and verify ${criterion.id}: ${criterion.title}`)
+        .join('\n')}\n`
+    : '';
+
+  return `## 1. Root Spec Review
+
+- [ ] 1.1 Review the approved root spec for \`${ticket.key}\`
+- [ ] 1.2 Confirm impacted layers, contracts, and assumptions
+- [ ] 1.3 Implement the requested change
+- [ ] 1.4 Validate the implemented change
+${acceptanceTasks}
+`;
+}
+
 function buildTicketMarkdown(ticket: ImportedJiraTicket): string {
   return `# ${ticket.key} - ${ticket.summary || 'Imported Jira Ticket'}
 
@@ -336,6 +393,33 @@ function buildTicketMarkdown(ticket: ImportedJiraTicket): string {
 ## Description
 
 ${ticket.description_text || 'No Jira description provided.'}
+`;
+}
+
+function buildDeltaSpecFromStructuredSpec(ticket: ImportedJiraTicket, structured: StructuredSdd): string {
+  const scenarios = structured.acceptanceCriteria.length > 0
+    ? structured.acceptanceCriteria
+      .map((criterion) => `#### Scenario: ${criterion.id} - ${criterion.title}
+${formatScenarioBody(criterion.body)}`)
+      .join('\n\n')
+    : `#### Scenario: Discovery root spec intent is satisfied
+- **GIVEN** Jira issue \`${ticket.key}\` was expanded into a root discovery spec
+- **WHEN** the change is implemented
+- **THEN** the implementation SHALL satisfy the root discovery spec intent`;
+
+  return `## ADDED Requirements
+
+### Requirement: ${structured.title || ticket.summary || `Implement ${ticket.key}`}
+The system SHALL implement the behavior specified by Jira issue \`${ticket.key}\`.
+${formatImportedSection('context', structured.context)}
+${formatImportedSection('goals', structured.goals)}
+${formatImportedSection('business rules', structured.businessRules)}
+${formatImportedSection('domain/data/integration contracts', structured.domainContracts)}
+${formatImportedSection('UX/error states', structured.uxErrorStates)}
+${formatImportedSection('non-goals', structured.nonGoals)}
+${formatImportedSection('out of scope', structured.outOfScope)}
+${formatImportedSection('traceability', structured.traceability)}
+${scenarios}
 `;
 }
 
@@ -354,6 +438,40 @@ export async function createChangeFromTicket(
   await fs.writeFile(path.join(changeDir, 'tasks.md'), buildTasks(ticket), 'utf-8');
   await fs.writeFile(path.join(changeDir, 'jira-ticket.md'), buildTicketMarkdown(ticket), 'utf-8');
   await fs.writeFile(path.join(specDir, 'spec.md'), buildDeltaSpec(ticket), 'utf-8');
+
+  return {
+    name: changeName,
+    path: changeDir,
+    schema: result.schema,
+    ticket,
+  };
+}
+
+export async function createChangeFromRootSpec(
+  ticket: ImportedJiraTicket,
+  rootSpecMarkdown: string,
+  options: CreateChangeFromRootSpecOptions = {}
+): Promise<TicketChangeResult> {
+  const projectRoot = process.cwd();
+  const changeName = options.name || deriveChangeNameFromTicket(ticket);
+  const structured = parseStructuredSdd(rootSpecMarkdown, ticket.summary || `Implement ${ticket.key}`);
+  if (!structured) {
+    return createChangeFromTicket(ticket, options);
+  }
+
+  const result = await createChange(projectRoot, changeName, { schema: options.schema });
+  const changeDir = path.join(projectRoot, 'openspec', 'changes', changeName);
+  const specDir = path.join(changeDir, 'specs', changeName);
+
+  await fs.mkdir(specDir, { recursive: true });
+  await fs.writeFile(path.join(changeDir, 'proposal.md'), buildProposalFromStructuredSpec(ticket, changeName, structured), 'utf-8');
+  await fs.writeFile(path.join(changeDir, 'tasks.md'), buildTasksFromStructuredSpec(structured, ticket), 'utf-8');
+  await fs.writeFile(path.join(changeDir, 'jira-ticket.md'), buildTicketMarkdown(ticket), 'utf-8');
+  await fs.writeFile(path.join(specDir, 'spec.md'), buildDeltaSpecFromStructuredSpec(ticket, structured), 'utf-8');
+  await fs.writeFile(path.join(changeDir, 'root-spec.md'), rootSpecMarkdown.endsWith('\n') ? rootSpecMarkdown : `${rootSpecMarkdown}\n`, 'utf-8');
+  if (options.rootSpecPath) {
+    await fs.writeFile(path.join(changeDir, 'root-spec-source.txt'), `${options.rootSpecPath}\n`, 'utf-8');
+  }
 
   return {
     name: changeName,

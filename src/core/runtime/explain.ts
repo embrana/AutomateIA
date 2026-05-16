@@ -101,6 +101,9 @@ interface ArchiveDecisionArtifact {
 }
 
 interface ArtifactContext {
+  project_evidence_ref: string | null;
+  root_spec_ref: string | null;
+  root_spec_review_ref: string | null;
   planning_ref: string | null;
   implementation_ref: string | null;
   critic_ref: string | null;
@@ -288,7 +291,19 @@ export class RuntimeExplainCommand {
 
   private async loadArtifacts(snapshot: RuntimeSnapshot): Promise<ArtifactContext> {
     if (!snapshot.change) {
+      const ticketKey = snapshot.ticket.ticket_key;
+      const projectEvidenceRef = this.artifactManager.getProjectEvidenceRef(ticketKey);
+      const rootSpecRef = this.artifactManager.getRootSpecRef(ticketKey);
+      const rootSpecReviewRef = this.artifactManager.getRootSpecReviewRef(ticketKey);
+      const [projectEvidenceExists, rootSpecExists, rootSpecReviewExists] = await Promise.all([
+        this.artifactManager.fileExists(projectEvidenceRef),
+        this.artifactManager.fileExists(rootSpecRef),
+        this.artifactManager.fileExists(rootSpecReviewRef),
+      ]);
       return {
+        project_evidence_ref: projectEvidenceExists ? projectEvidenceRef : null,
+        root_spec_ref: rootSpecExists ? rootSpecRef : null,
+        root_spec_review_ref: rootSpecReviewExists ? rootSpecReviewRef : null,
         planning_ref: null,
         implementation_ref: null,
         critic_ref: null,
@@ -302,6 +317,9 @@ export class RuntimeExplainCommand {
 
     const { ticket_key: ticketKey } = snapshot.ticket;
     const { change_name: changeName } = snapshot.change;
+    const projectEvidenceRef = this.artifactManager.getProjectEvidenceRef(ticketKey);
+    const rootSpecRef = this.artifactManager.getRootSpecRef(ticketKey);
+    const rootSpecReviewRef = this.artifactManager.getRootSpecReviewRef(ticketKey);
     const planningRef = this.artifactManager.getPlanningRef(ticketKey, changeName);
     const implementationRef = this.artifactManager.getImplementationRef(ticketKey, changeName);
     const criticRef = this.artifactManager.getCriticRef(ticketKey, changeName);
@@ -310,6 +328,9 @@ export class RuntimeExplainCommand {
     const archiveDecisionRef = this.artifactManager.getArchiveDecisionRef(ticketKey, changeName);
 
     const [
+      projectEvidenceExists,
+      rootSpecExists,
+      rootSpecReviewExists,
       planningExists,
       implementationExists,
       criticExists,
@@ -317,6 +338,9 @@ export class RuntimeExplainCommand {
       validationResult,
       archiveDecision,
     ] = await Promise.all([
+      this.artifactManager.fileExists(projectEvidenceRef),
+      this.artifactManager.fileExists(rootSpecRef),
+      this.artifactManager.fileExists(rootSpecReviewRef),
       this.artifactManager.fileExists(planningRef),
       this.artifactManager.fileExists(implementationRef),
       this.artifactManager.fileExists(criticRef),
@@ -326,6 +350,9 @@ export class RuntimeExplainCommand {
     ]);
 
     return {
+      project_evidence_ref: projectEvidenceExists ? projectEvidenceRef : null,
+      root_spec_ref: rootSpecExists ? rootSpecRef : null,
+      root_spec_review_ref: rootSpecReviewExists ? rootSpecReviewRef : null,
       planning_ref: planningExists ? planningRef : null,
       implementation_ref: implementationExists ? implementationRef : null,
       critic_ref: criticExists ? criticRef : null,
@@ -532,6 +559,21 @@ export class RuntimeExplainCommand {
     }
 
     if (
+      snapshot.ticket.state === 'DISCOVERY_IN_PROGRESS'
+      || snapshot.ticket.state === 'ROOT_SPEC_REVIEW'
+    ) {
+      return {
+        route: 'observe',
+        summary: snapshot.ticket.state === 'ROOT_SPEC_REVIEW'
+          ? 'Continue the root spec review loop before expanding change artifacts.'
+          : 'Continue discovery to generate project evidence and the root spec draft.',
+        command: snapshot.ticket.state === 'ROOT_SPEC_REVIEW'
+          ? 'osj orchestrate --until root-spec-review'
+          : 'osj orchestrate --until root-spec',
+      };
+    }
+
+    if (
       snapshot.change?.state === 'TASKED'
       || snapshot.ticket.state === 'PLANNED'
       || snapshot.ticket.state === 'SPEC_READY'
@@ -554,6 +596,9 @@ export class RuntimeExplainCommand {
     const approvalEvidenceRefs = pendingApprovals.flatMap((approval) => approval.evidence_refs);
     return uniqueRefs([
       ...approvalEvidenceRefs,
+      artifacts.root_spec_review_ref,
+      artifacts.root_spec_ref,
+      artifacts.project_evidence_ref,
       artifacts.validation_ref,
       artifacts.archive_decision_ref,
       artifacts.closure_ref,

@@ -1,8 +1,24 @@
 import { randomUUID } from 'crypto';
+import { promises as fs } from 'fs';
+import path from 'path';
 import {
   ContextAgent,
   type ContextAgentOutput,
 } from '../../../agents/context/ContextAgent.js';
+import {
+  ProjectEvidenceResolverAgent,
+  type ProjectEvidenceSummary,
+} from '../../../agents/root-spec/ProjectEvidenceResolverAgent.js';
+import {
+  RootSpecAuthorAgent,
+  type RootSpecAuthorInput,
+  type RootSpecAuthorOutput,
+} from '../../../agents/root-spec/RootSpecAuthorAgent.js';
+import {
+  RootSpecCriticAgent,
+  type RootSpecCriticInput,
+  type RootSpecCriticOutput,
+} from '../../../agents/root-spec/RootSpecCriticAgent.js';
 import {
   SpecAgent,
   type SpecAgentOutput,
@@ -60,6 +76,9 @@ import { ApprovalManager } from '../approvals/ApprovalManager.js';
 
 type SupportedAgent =
   | ContextAgent
+  | ProjectEvidenceResolverAgent
+  | RootSpecAuthorAgent
+  | RootSpecCriticAgent
   | SpecAgent
   | PlanningAgent
   | ImplementationAgent
@@ -69,6 +88,9 @@ type SupportedAgent =
 
 export type OrchestrationStage =
   | 'context'
+  | 'project-evidence'
+  | 'root-spec'
+  | 'root-spec-review'
   | 'spec'
   | 'planning'
   | 'implementation'
@@ -78,6 +100,9 @@ export type OrchestrationStage =
 
 const ORCHESTRATION_PLAN: AgentName[] = [
   'context_agent',
+  'project_evidence_resolver_agent',
+  'root_spec_author_agent',
+  'root_spec_critic_agent',
   'spec_agent',
   'planning_agent',
   'implementation_agent',
@@ -86,21 +111,26 @@ const ORCHESTRATION_PLAN: AgentName[] = [
   'delivery_agent',
 ];
 
-const EXPECTED_NEXT_ACTION: Partial<Record<AgentName, NextAction>> = {
-  context_agent: 'RUN_SPEC_AGENT',
-  spec_agent: 'RUN_PLANNING_AGENT',
-  planning_agent: 'RUN_IMPLEMENTATION_AGENT',
-  implementation_agent: 'RUN_CRITIC_AGENT',
-  critic_agent: 'RUN_VALIDATION_AGENT',
-  validation_agent: 'RUN_DELIVERY_AGENT',
-};
-
 const APPROVAL_SCOPE_TO_STAGE: Partial<Record<ApprovalScope, OrchestrationStage>> = {
+  root_spec: 'root-spec-review',
   plan: 'planning',
   implementation: 'implementation',
   recovery: 'validation',
   jira_comment: 'delivery',
   archive: 'delivery',
+};
+
+const NEXT_AGENT_BY_ACTION: Partial<Record<NextAction, AgentName>> = {
+  RUN_CONTEXT_AGENT: 'context_agent',
+  RUN_PROJECT_EVIDENCE_RESOLVER_AGENT: 'project_evidence_resolver_agent',
+  RUN_ROOT_SPEC_AUTHOR_AGENT: 'root_spec_author_agent',
+  RUN_ROOT_SPEC_CRITIC_AGENT: 'root_spec_critic_agent',
+  RUN_SPEC_AGENT: 'spec_agent',
+  RUN_PLANNING_AGENT: 'planning_agent',
+  RUN_IMPLEMENTATION_AGENT: 'implementation_agent',
+  RUN_CRITIC_AGENT: 'critic_agent',
+  RUN_VALIDATION_AGENT: 'validation_agent',
+  RUN_DELIVERY_AGENT: 'delivery_agent',
 };
 
 function nowIso(): string {
@@ -162,6 +192,9 @@ export class AgentOrchestrator {
     this.approvalManager = new ApprovalManager(this.runtimeStore, this.stateEngine, projectRoot);
     this.agents = {
       context_agent: new ContextAgent(),
+      project_evidence_resolver_agent: new ProjectEvidenceResolverAgent(),
+      root_spec_author_agent: new RootSpecAuthorAgent(),
+      root_spec_critic_agent: new RootSpecCriticAgent(),
       spec_agent: new SpecAgent(),
       planning_agent: new PlanningAgent(),
       implementation_agent: new ImplementationAgent(),
@@ -242,7 +275,8 @@ export class AgentOrchestrator {
   }
 
   async orchestrateUntil(stage: OrchestrationStage): Promise<AgentExecutionSummary[]> {
-    const stopIndex = ORCHESTRATION_PLAN.findIndex((item) => item === `${stage}_agent`);
+    const targetAgentName = this.stageToAgentName(stage);
+    const stopIndex = ORCHESTRATION_PLAN.findIndex((item) => item === targetAgentName);
     if (stopIndex < 0) {
       throw new Error(`Unsupported orchestration stage: ${stage}`);
     }
@@ -253,23 +287,38 @@ export class AgentOrchestrator {
       return [];
     }
 
-    const startIndex = await this.determineStartIndex(resolved.runtimeSnapshot);
-    if (startIndex > stopIndex) {
+    let currentAgent = await this.inferNextAgent(resolved.runtimeSnapshot);
+    const startIndex = ORCHESTRATION_PLAN.findIndex((agent) => agent === currentAgent);
+    if (startIndex < 0 || startIndex > stopIndex) {
       return [];
     }
 
     const executed: AgentExecutionSummary[] = [];
-    for (const agentName of ORCHESTRATION_PLAN.slice(startIndex, stopIndex + 1)) {
-      const summary = await this.runAgent(agentName);
+    const maxSteps = Math.max(ORCHESTRATION_PLAN.length * 3, 12);
+
+    for (let steps = 0; steps < maxSteps; steps += 1) {
+      const currentIndex = ORCHESTRATION_PLAN.findIndex((agent) => agent === currentAgent);
+      const summary = await this.runAgent(currentAgent);
       executed.push(summary);
 
       if (summary.status !== 'SUCCEEDED') {
         break;
       }
 
-      if (agentName !== ORCHESTRATION_PLAN[stopIndex] && !this.shouldContinueAfter(agentName, summary.recommended_next_action)) {
+      if (currentIndex >= stopIndex) {
         break;
       }
+
+      const nextAgent = NEXT_AGENT_BY_ACTION[summary.recommended_next_action];
+      if (!nextAgent) {
+        break;
+      }
+
+      const nextIndex = ORCHESTRATION_PLAN.findIndex((agent) => agent === nextAgent);
+      if (nextIndex < 0 || nextIndex > stopIndex) {
+        break;
+      }
+      currentAgent = nextAgent;
     }
 
     return executed;
@@ -309,7 +358,37 @@ export class AgentOrchestrator {
       if (!hasTicketContext || snapshot.ticket.state === 'DISCOVERED') {
         return 'context_agent';
       }
-      return 'spec_agent';
+
+      const projectEvidenceRef = this.artifactManager.getProjectEvidenceRef(ticketKey);
+      const rootSpecRef = this.artifactManager.getRootSpecRef(ticketKey);
+      const rootSpecReviewRef = this.artifactManager.getRootSpecReviewRef(ticketKey);
+      const [hasProjectEvidence, hasRootSpec, rootSpecReview] = await Promise.all([
+        this.artifactManager.fileExists(projectEvidenceRef),
+        this.artifactManager.fileExists(rootSpecRef),
+        this.artifactManager.readJsonRef<RootSpecCriticOutput>(rootSpecReviewRef),
+      ]);
+
+      if (rootSpecReview?.review_result === 'APPROVED' || snapshot.ticket.state === 'SPEC_READY') {
+        return 'spec_agent';
+      }
+
+      if (rootSpecReview?.blocker_classification === 'BUSINESS_CLARIFICATION_REQUIRED') {
+        return 'root_spec_author_agent';
+      }
+
+      if (rootSpecReview?.blocker_classification === 'RESOLVABLE_TECHNICAL_TBDS') {
+        return 'project_evidence_resolver_agent';
+      }
+
+      if (hasRootSpec || snapshot.ticket.state === 'ROOT_SPEC_REVIEW') {
+        return 'root_spec_critic_agent';
+      }
+
+      if (hasProjectEvidence || snapshot.ticket.state === 'DISCOVERY_IN_PROGRESS') {
+        return 'root_spec_author_agent';
+      }
+
+      return 'project_evidence_resolver_agent';
     }
 
     const hasPlanning = await this.artifactManager.fileExists(this.artifactManager.getPlanningRef(ticketKey, changeName));
@@ -340,19 +419,64 @@ export class AgentOrchestrator {
       return hasPlanning ? 'implementation_agent' : 'planning_agent';
     }
 
-    if (snapshot.ticket.state === 'CONTEXT_IMPORTED') {
-      return 'spec_agent';
+    if (snapshot.ticket.state === 'CONTEXT_IMPORTED' || snapshot.ticket.state === 'DISCOVERY_IN_PROGRESS') {
+      return 'project_evidence_resolver_agent';
     }
 
     return 'context_agent';
   }
 
-  private shouldContinueAfter(agentName: AgentName, nextAction: NextAction): boolean {
-    const expected = EXPECTED_NEXT_ACTION[agentName];
-    if (!expected) {
-      return true;
+  private stageToAgentName(stage: OrchestrationStage): AgentName {
+    switch (stage) {
+      case 'context':
+        return 'context_agent';
+      case 'project-evidence':
+        return 'project_evidence_resolver_agent';
+      case 'root-spec':
+        return 'root_spec_author_agent';
+      case 'root-spec-review':
+        return 'root_spec_critic_agent';
+      case 'spec':
+        return 'spec_agent';
+      case 'planning':
+        return 'planning_agent';
+      case 'implementation':
+        return 'implementation_agent';
+      case 'critic':
+        return 'critic_agent';
+      case 'validation':
+        return 'validation_agent';
+      case 'delivery':
+        return 'delivery_agent';
+      default:
+        return 'context_agent';
     }
-    return nextAction === expected;
+  }
+
+  private async getApprovedClarificationNotes(ticketKey: string, changeName?: string): Promise<string[]> {
+    const approvals = await this.approvalManager.listApprovalsForTicket(ticketKey);
+    return approvals
+      .filter((approval) =>
+        approval.scope === 'root_spec'
+        && approval.status === 'APPROVED'
+        && (!changeName || approval.change_name === changeName || approval.change_name === undefined)
+        && Boolean(approval.resolution_reason?.trim())
+      )
+      .map((approval) => approval.resolution_reason!.trim());
+  }
+
+  private async readMarkdownRef(ref: string): Promise<string | null> {
+    const absoluteRef = path.isAbsolute(ref)
+      ? ref
+      : path.join(this.artifactManager.getProjectRoot(), ref);
+    try {
+      return await fs.readFile(absoluteRef, 'utf-8');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        return null;
+      }
+      throw error;
+    }
   }
 
   private async buildEnvelope(agentName: AgentName, snapshot: RuntimeSnapshot, cycleId: string): Promise<AgentRunEnvelope> {
@@ -365,6 +489,33 @@ export class AgentOrchestrator {
         inputRefs.push(this.artifactManager.getChangeContextRef(ticketKey, changeName));
       } else {
         inputRefs.push(this.artifactManager.getTicketContextRef(ticketKey));
+      }
+    }
+
+    if (
+      agentName === 'root_spec_author_agent'
+      || agentName === 'root_spec_critic_agent'
+      || agentName === 'spec_agent'
+      || agentName === 'planning_agent'
+    ) {
+      const projectEvidenceRef = this.artifactManager.getProjectEvidenceRef(ticketKey);
+      if (await this.artifactManager.fileExists(projectEvidenceRef)) {
+        inputRefs.push(projectEvidenceRef);
+      }
+    }
+
+    if (
+      agentName === 'root_spec_critic_agent'
+      || agentName === 'spec_agent'
+      || agentName === 'planning_agent'
+    ) {
+      const rootSpecRef = this.artifactManager.getRootSpecRef(ticketKey);
+      if (await this.artifactManager.fileExists(rootSpecRef)) {
+        inputRefs.push(rootSpecRef);
+      }
+      const rootSpecReviewRef = this.artifactManager.getRootSpecReviewRef(ticketKey);
+      if (agentName !== 'root_spec_critic_agent' && await this.artifactManager.fileExists(rootSpecReviewRef)) {
+        inputRefs.push(rootSpecReviewRef);
       }
     }
 
@@ -405,7 +556,12 @@ export class AgentOrchestrator {
       input_refs: inputRefs,
       constraints: {
         canReadJira: true,
-        canEditSpecs: agentName === 'context_agent' || agentName === 'spec_agent' || agentName === 'planning_agent',
+        canEditSpecs: agentName === 'context_agent'
+          || agentName === 'project_evidence_resolver_agent'
+          || agentName === 'root_spec_author_agent'
+          || agentName === 'root_spec_critic_agent'
+          || agentName === 'spec_agent'
+          || agentName === 'planning_agent',
         canEditCode: agentName === 'implementation_agent',
         canRunValidation: agentName === 'validation_agent',
         canCommentJira: agentName === 'delivery_agent',
@@ -434,6 +590,56 @@ export class AgentOrchestrator {
       ? this.artifactManager.getChangeContextRef(ticketKey, changeName)
       : this.artifactManager.getTicketContextRef(ticketKey);
     const normalizedContext = await this.artifactManager.readJsonRef<NormalizedContext>(contextRef);
+
+    if (!normalizedContext) {
+      throw new Error(`Agent ${agentName} requires normalized context artifacts.`);
+    }
+
+    if (agentName === 'project_evidence_resolver_agent') {
+      return normalizedContext;
+    }
+
+    const projectEvidence = await this.artifactManager.readJsonRef<ProjectEvidenceSummary>(
+      this.artifactManager.getProjectEvidenceRef(ticketKey)
+    );
+
+    if (agentName === 'root_spec_author_agent') {
+      if (!projectEvidence) {
+        throw new Error('RootSpecAuthorAgent requires project evidence artifacts.');
+      }
+      const previousReview = await this.artifactManager.readJsonRef<RootSpecCriticOutput>(
+        this.artifactManager.getRootSpecReviewRef(ticketKey)
+      );
+      const input: RootSpecAuthorInput = {
+        normalized_context: normalizedContext,
+        project_evidence: projectEvidence,
+        clarification_notes: await this.getApprovedClarificationNotes(ticketKey, changeName),
+        previous_review: previousReview
+          ? {
+              blocker_classification: previousReview.blocker_classification,
+              findings: previousReview.findings,
+              human_questions: previousReview.human_questions,
+            }
+          : undefined,
+      };
+      return input;
+    }
+
+    if (agentName === 'root_spec_critic_agent') {
+      if (!projectEvidence) {
+        throw new Error('RootSpecCriticAgent requires project evidence artifacts.');
+      }
+      const rootSpecMarkdown = await this.readMarkdownRef(this.artifactManager.getRootSpecRef(ticketKey));
+      if (!rootSpecMarkdown) {
+        throw new Error('RootSpecCriticAgent requires a generated root spec artifact.');
+      }
+      const input: RootSpecCriticInput = {
+        normalized_context: normalizedContext,
+        project_evidence: projectEvidence,
+        root_spec_markdown: rootSpecMarkdown,
+      };
+      return input;
+    }
 
     if (agentName === 'spec_agent' || agentName === 'planning_agent') {
       return normalizedContext ?? undefined;
@@ -550,6 +756,160 @@ export class AgentOrchestrator {
             : undefined,
         });
         return [jsonRef, summaryRef];
+      }
+      case 'project_evidence_resolver_agent': {
+        const output = result.output as ProjectEvidenceSummary;
+        const jsonRef = await this.artifactManager.writeTicketJson(ticketKey, 'discovery', 'project-evidence.json', output);
+        const summaryRef = await this.artifactManager.writeTicketMarkdown(
+          ticketKey,
+          'discovery',
+          'project-evidence.md',
+          [
+            '# Project Evidence Summary',
+            '',
+            output.repository_summary,
+            '',
+            '## Impacted Layers',
+            ...formatBullets(output.impacted_layers, 'No layers inferred'),
+            '',
+            '## Documentation Refs',
+            ...formatBullets(output.documentation_refs, 'No documentation refs'),
+            '',
+            '## API Contract Refs',
+            ...formatBullets(output.api_contract_refs, 'No API contract refs'),
+            '',
+            '## Data Model Refs',
+            ...formatBullets(output.data_model_refs, 'No data model refs'),
+            '',
+            '## Technical Constraints',
+            ...formatBullets(output.technical_constraints, 'No explicit technical constraints inferred'),
+            '',
+            '## Unresolved Technical TBDs',
+            ...formatBullets(output.unresolved_technical_tbds, 'None'),
+            '',
+          ].join('\n')
+        );
+
+        const refreshed = await this.contextResolver.resolveActive();
+        await this.sessionManager.syncFromTimerSession(refreshed.timerSession, {
+          overrideTicketState: 'DISCOVERY_IN_PROGRESS',
+        });
+        return [jsonRef, summaryRef];
+      }
+      case 'root_spec_author_agent': {
+        const output = result.output as RootSpecAuthorOutput;
+        const specRef = await this.artifactManager.writeTicketMarkdown(ticketKey, 'discovery', 'root-spec.md', output.spec_markdown);
+        const metadataRef = await this.artifactManager.writeTicketJson(ticketKey, 'discovery', 'root-spec-metadata.json', output.metadata);
+        const backendRefs: string[] = [];
+        if (output.backend_invocation.task_prompt) {
+          backendRefs.push(
+            await this.artifactManager.writeTicketMarkdown(
+              ticketKey,
+              'discovery',
+              'root-spec-backend-prompt.md',
+              [
+                '# Root Spec Backend Prompt',
+                '',
+                output.backend_invocation.system_prompt
+                  ? `## System Prompt\n${output.backend_invocation.system_prompt}\n`
+                  : '',
+                '## Task Prompt',
+                output.backend_invocation.task_prompt,
+                '',
+              ].join('\n')
+            )
+          );
+        }
+        if (output.backend_invocation.request_payload) {
+          backendRefs.push(
+            await this.artifactManager.writeTicketJson(ticketKey, 'discovery', 'root-spec-backend-request.json', output.backend_invocation.request_payload)
+          );
+        }
+        if (output.backend_invocation.response_payload !== undefined) {
+          backendRefs.push(
+            await this.artifactManager.writeTicketJson(ticketKey, 'discovery', 'root-spec-backend-response.json', output.backend_invocation.response_payload)
+          );
+        }
+
+        const refreshed = await this.contextResolver.resolveActive();
+        await this.sessionManager.syncFromTimerSession(refreshed.timerSession, {
+          overrideTicketState: 'ROOT_SPEC_REVIEW',
+        });
+        return [specRef, metadataRef, ...backendRefs];
+      }
+      case 'root_spec_critic_agent': {
+        const output = result.output as RootSpecCriticOutput;
+        const jsonRef = await this.artifactManager.writeTicketJson(ticketKey, 'discovery', 'root-spec-review.json', output);
+        const markdownRef = await this.artifactManager.writeTicketMarkdown(
+          ticketKey,
+          'discovery',
+          'root-spec-review.md',
+          [
+            '# Root Spec Review',
+            '',
+            `Review result: ${output.review_result}`,
+            `Blocker classification: ${output.blocker_classification}`,
+            '',
+            '## Findings',
+            ...formatBullets(
+              output.findings.map((finding) =>
+                `${finding.severity.toUpperCase()}${finding.file ? ` ${finding.file}` : ''}: ${finding.message}`
+              ),
+              'No findings'
+            ),
+            '',
+            '## Human Questions',
+            ...formatBullets(output.human_questions, 'None'),
+            '',
+          ].join('\n')
+        );
+        const backendRefs: string[] = [];
+        if (output.backend_invocation.task_prompt) {
+          backendRefs.push(
+            await this.artifactManager.writeTicketMarkdown(
+              ticketKey,
+              'discovery',
+              'root-spec-review-backend-prompt.md',
+              [
+                '# Root Spec Review Backend Prompt',
+                '',
+                output.backend_invocation.system_prompt
+                  ? `## System Prompt\n${output.backend_invocation.system_prompt}\n`
+                  : '',
+                '## Task Prompt',
+                output.backend_invocation.task_prompt,
+                '',
+              ].join('\n')
+            )
+          );
+        }
+        if (output.backend_invocation.request_payload) {
+          backendRefs.push(
+            await this.artifactManager.writeTicketJson(ticketKey, 'discovery', 'root-spec-review-backend-request.json', output.backend_invocation.request_payload)
+          );
+        }
+        if (output.backend_invocation.response_payload !== undefined) {
+          backendRefs.push(
+            await this.artifactManager.writeTicketJson(ticketKey, 'discovery', 'root-spec-review-backend-response.json', output.backend_invocation.response_payload)
+          );
+        }
+
+        const refreshed = await this.contextResolver.resolveActive();
+        await this.sessionManager.syncFromTimerSession(refreshed.timerSession, {
+          overrideSessionState: result.recommended_next_action === 'REQUEST_HUMAN_APPROVAL' ? 'AWAITING_HUMAN' : undefined,
+          overrideTicketState: result.recommended_next_action === 'REQUEST_HUMAN_APPROVAL'
+            ? 'HUMAN_ESCALATION_REQUIRED'
+            : result.recommended_next_action === 'RUN_SPEC_AGENT'
+              ? 'SPEC_READY'
+              : 'DISCOVERY_IN_PROGRESS',
+        });
+        const approvalRefs = await this.persistApprovalIfRequested(
+          'root_spec_critic_agent',
+          result,
+          refreshed.runtimeSnapshot,
+          [jsonRef, markdownRef, ...backendRefs]
+        );
+        return [jsonRef, markdownRef, ...backendRefs, ...approvalRefs];
       }
       case 'spec_agent': {
         const output = result.output as SpecAgentOutput;
@@ -1001,9 +1361,12 @@ export class AgentOrchestrator {
     return [this.artifactManager.getApprovalRef(snapshot.ticket.ticket_key, approval.approval_id)];
   }
 
-  private inferApprovalScope(agentName: AgentName, result: AgentResultEnvelope<unknown>): 'plan' | 'implementation' | 'archive' | 'recovery' {
+  private inferApprovalScope(agentName: AgentName, result: AgentResultEnvelope<unknown>): ApprovalScope {
     if (result.recommended_next_action === 'REQUEST_ARCHIVE_APPROVAL' || agentName === 'delivery_agent') {
       return 'archive';
+    }
+    if (agentName === 'root_spec_critic_agent') {
+      return 'root_spec';
     }
     if (agentName === 'planning_agent') {
       return 'plan';
@@ -1021,6 +1384,12 @@ export class AgentOrchestrator {
     switch (agentName) {
       case 'planning_agent':
         return 'Planning agent requires human approval before execution can continue.';
+      case 'root_spec_critic_agent': {
+        const output = result.output as RootSpecCriticOutput;
+        return output.human_questions.join('; ')
+          || output.findings.map((finding) => finding.message).join('; ')
+          || 'Root spec discovery requires human clarification before artifacts can be expanded.';
+      }
       case 'implementation_agent': {
         const output = result.output as ImplementationAgentOutput;
         return output.scope_assessment.policy_reasons.join('; ')

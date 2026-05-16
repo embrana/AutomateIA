@@ -1,28 +1,54 @@
 # Current Runtime Implementation
 
-See also: [ARCHITECTURE](./ARCHITECTURE.md), [STATE-MACHINES](./STATE-MACHINES.md), [AGENT-CONTRACTS](./AGENT-CONTRACTS.md), [AGENT-BACKENDS](./AGENT-BACKENDS.md), [AUTONOMY-POLICY](./AUTONOMY-POLICY.md), [IMPLEMENTATION-BACKLOG](./IMPLEMENTATION-BACKLOG.md)
+See also: [AGENTIC-FLOW](./AGENTIC-FLOW.md), [ARCHITECTURE](./ARCHITECTURE.md), [STATE-MACHINES](./STATE-MACHINES.md), [AGENT-CONTRACTS](./AGENT-CONTRACTS.md), [AGENT-BACKENDS](./AGENT-BACKENDS.md), [ROOT-SPEC-PROMPT](./ROOT-SPEC-PROMPT.md), [ROOT-SPEC-RUNTIME-DESIGN](./ROOT-SPEC-RUNTIME-DESIGN.md), [IMPLEMENTATION-BACKLOG](./IMPLEMENTATION-BACKLOG.md)
 
 ## Purpose
 
-This document describes what is already implemented in the repository after the first seven runtime PRs. It is intentionally narrower than the architecture docs and should be treated as the operational source of truth for the current vertical slice.
+This document is the operational source of truth for what is already implemented in the runtime.
+
+It focuses on:
+
+- the actual agent order running today
+- the persisted artifacts produced by each stage
+- the current CLI surface
+- the discovery/root-spec layer that now sits between Jira import and OpenSpec artifact expansion
 
 ## What Is Running Today
 
-The repository already supports a visible multi-agent runtime slice over an active Jira-backed session:
+The repository already supports a governed multi-agent runtime over an active Jira-backed session:
 
 1. `osj purpose` or `osj timer start` opens a runtime-aware session.
-2. `osj runtime status` shows ticket, session, change, and cycle state.
-3. `osj runtime explain` summarizes blockers, evidence, and next actions.
-4. `osj opsx track explore|propose ...` and `osj opsx create-change ...` provide native session-aware governance for the generated `/opsx` workflows.
-5. `osj agent run context` creates normalized context artifacts.
-6. `osj agent run spec` creates or reuses OpenSpec change artifacts.
-7. `osj agent run planning` writes an execution plan.
-8. `osj agent run implementation` can prepare or invoke a configured backend, apply runtime-controlled local workspace actions, run focused verification commands, inspect the active workspace diff, apply autonomy policy checks, and write an implementation report.
-9. `osj agent run critic` reviews the implementation report against plan and context.
-10. `osj agent run validation` runs OpenSpec validation plus runtime checks and decides whether the loop should retry, escalate, or continue to delivery.
-11. `osj agent run delivery` prepares closure evidence, archive decision data, and Jira comment draft.
-12. `osj approval show|accept|reject` exposes human checkpoints as runtime artifacts.
-13. `osj orchestrate --until delivery` runs the whole current slice through governed closeout.
+2. `osj runtime status` and `osj runtime explain` expose current runtime state.
+3. `osj opsx track explore|propose ...` bridges OPSX workflows into session-governed timer evidence.
+4. `osj opsx create-change <name>` can now run a session-aware discovery flow instead of only creating a scaffold.
+5. `osj agent run context` creates normalized ticket context.
+6. `osj agent run project-evidence` creates repository-backed technical evidence.
+7. `osj agent run root-spec` generates a root `spec.md` using the embedded product/business-analysis prompt.
+8. `osj agent run root-spec-review` critiques the root spec and drives the discovery loop.
+9. `osj agent run spec` expands the accepted root spec into OpenSpec change artifacts.
+10. `osj agent run planning` writes the execution plan.
+11. `osj agent run implementation` performs governed implementation work through the configured backend/runtime adapter.
+12. `osj agent run critic` reviews the implementation report.
+13. `osj agent run validation` classifies pass, retry, escalation, or block.
+14. `osj agent run delivery` prepares closeout evidence and archive readiness.
+15. `osj approval show|accept|reject` resolves human checkpoints.
+
+## Implemented Stage Order
+
+The current orchestrator executes these stages in order:
+
+```text
+context
+-> project-evidence
+-> root-spec
+-> root-spec-review
+-> spec
+-> planning
+-> implementation
+-> critic
+-> validation
+-> delivery
+```
 
 ## Current Runtime Flow
 
@@ -30,20 +56,56 @@ The repository already supports a visible multi-agent runtime slice over an acti
 flowchart TD
     A["osj purpose / timer start"] --> B["osj opsx track explore / propose"]
     B --> C["ContextAgent"]
-    C --> D["SpecAgent"]
-    D --> E["PlanningAgent"]
-    E --> F{"Approval required?"}
-    F -- "yes" --> G["Approval artifact"]
-    F -- "no" --> H["ImplementationAgent"]
-    G --> H
-    H --> I["CriticAgent"]
-    I --> J["ValidationAgent"]
-    J --> K{"Passed?"}
-    K -- "retry" --> H
-    K -- "escalate" --> G
-    K -- "passed" --> L["DeliveryAgent"]
-    L --> M["Archive / worklog governance"]
+    C --> D["ProjectEvidenceResolverAgent"]
+    D --> E["RootSpecAuthorAgent"]
+    E --> F["RootSpecCriticAgent"]
+    F --> G{"Root spec ready?"}
+    G -- "no, technical TBDs" --> D
+    G -- "no, human clarification" --> H["Approval / clarification"]
+    G -- "yes" --> I["SpecAgent"]
+    H --> E
+    I --> J["PlanningAgent"]
+    J --> K{"Approval required?"}
+    K -- "yes" --> H
+    K -- "no" --> L["ImplementationAgent"]
+    L --> M["CriticAgent"]
+    M --> N["ValidationAgent"]
+    N --> O{"Passed?"}
+    O -- "retry" --> L
+    O -- "escalate" --> H
+    O -- "passed" --> P["DeliveryAgent"]
+    P --> Q["Archive / worklog governance"]
 ```
+
+## Where The New Prompt Lives And Runs
+
+The new prompt is now a first-class runtime asset.
+
+Source of truth in code:
+
+- `src/agents/root-spec/root-spec-prompt.ts`
+
+Human-readable mirror:
+
+- [ROOT-SPEC-PROMPT](./ROOT-SPEC-PROMPT.md)
+
+Runtime execution point:
+
+- `RootSpecAuthorAgent`
+
+What happens at that point:
+
+1. the agent receives normalized Jira context
+2. it receives project evidence derived from the repository
+3. it injects the root-spec author prompt
+4. it asks the backend to return structured JSON
+5. it writes the returned `spec_markdown` into `.openspec/runtime/tickets/<ticket>/discovery/root-spec.md`
+
+If a backend is configured, the runtime can also persist:
+
+- `root-spec-backend-prompt.md`
+- `root-spec-backend-request.json`
+- `root-spec-backend-response.json`
 
 ## Commands Available Now
 
@@ -56,6 +118,9 @@ osj opsx track propose [phase] [--json]
 osj opsx create-change [name] [--schema <name>]
 
 osj agent run context
+osj agent run project-evidence
+osj agent run root-spec
+osj agent run root-spec-review
 osj agent run spec
 osj agent run planning
 osj agent run implementation
@@ -64,6 +129,9 @@ osj agent run validation
 osj agent run delivery
 
 osj orchestrate --until context
+osj orchestrate --until project-evidence
+osj orchestrate --until root-spec
+osj orchestrate --until root-spec-review
 osj orchestrate --until spec
 osj orchestrate --until planning
 osj orchestrate --until implementation
@@ -85,153 +153,193 @@ The runtime now persists:
 - change runtime state in `.openspec/runtime/tickets/<ticket>/changes/<change>/change-runtime.json`
 - execution cycles in `.openspec/runtime/tickets/<ticket>/changes/<change>/cycles/cycle-<n>.json`
 - agent runs in `.openspec/runtime/tickets/<ticket>/changes/<change>/agent-runs/run-<id>.json`
-- context artifacts under `context/`
-- planning artifacts under `planning/`
-- implementation report under `implementation/`
-- critic report under `review/`
-- validation result under `validation/`
-- delivery closure summary and archive decision under `delivery/`
-- approval artifacts under `approvals/`
+- approvals in `.openspec/runtime/tickets/<ticket>/approvals/`
+
+Discovery-stage artifacts:
+
+- `context/normalized-context.json`
+- `context/context-summary.md`
+- `discovery/project-evidence.json`
+- `discovery/project-evidence.md`
+- `discovery/root-spec.md`
+- `discovery/root-spec-metadata.json`
+- `discovery/root-spec-review.json`
+- `discovery/root-spec-review.md`
+- optional `discovery/change-name-hint.json`
+
+Change-stage artifacts:
+
+- `openspec/changes/<change>/root-spec.md`
+- `openspec/changes/<change>/proposal.md`
+- `openspec/changes/<change>/tasks.md`
+
+Execution-stage artifacts:
+
+- `planning/execution-plan.json`
+- `planning/execution-plan.md`
+- `implementation/change-report.json`
+- `implementation/change-report.md`
+- `review/critic-report.json`
+- `review/critic-report.md`
+- `validation/validation-result.json`
+- `validation/validation-result.md`
+- `delivery/closure-summary.json`
+- `delivery/archive-decision.json`
 
 ## Agent Behavior Implemented Today
 
 ### Context Agent
 
-- Parses structured Jira SDD when available.
-- Falls back to heuristics for unstructured descriptions.
-- Writes `normalized-context.json` and `context-summary.md`.
-- Does not use an LLM fallback yet.
+- parses structured Jira SDD when available
+- falls back to heuristics for unstructured ticket descriptions
+- writes normalized context artifacts
+- returns `RUN_PROJECT_EVIDENCE_RESOLVER_AGENT`
+
+### ProjectEvidenceResolverAgent
+
+- inspects repository evidence before the root spec is finalized
+- can surface:
+  - relevant modules
+  - impacted layers
+  - technical constraints
+  - existing contracts, enums, and states
+  - unresolved technical TBDs
+- writes `project-evidence.json` and `project-evidence.md`
+- returns `RUN_ROOT_SPEC_AUTHOR_AGENT`
+
+### RootSpecAuthorAgent
+
+- loads the embedded root-spec author prompt
+- combines imported Jira context with project evidence
+- generates a root `spec.md`
+- writes:
+  - `root-spec.md`
+  - `root-spec-metadata.json`
+- returns `RUN_ROOT_SPEC_CRITIC_AGENT`
+
+### RootSpecCriticAgent
+
+- reviews the generated root spec for:
+  - missing coverage
+  - contradictory requirements
+  - technical TBDs resolvable from repo evidence
+  - business TBDs that need clarification
+- can loop back to:
+  - `project_evidence_resolver_agent`
+  - `root_spec_author_agent`
+- can request human approval/clarification with `root_spec` scope
+- on success, returns `RUN_SPEC_AGENT`
 
 ### Spec Agent
 
-- Creates the change when missing.
-- Reuses existing change artifacts when the session already has a change.
-- Keeps runtime context attached to the change.
+- creates or reuses the change once the root spec is acceptable
+- expands root-spec-driven artifacts into the OpenSpec change
+- keeps runtime/change linkage aligned
 
 ### Planning Agent
 
-- Generates a heuristic execution plan and likely affected files.
-- Recommends `RUN_IMPLEMENTATION_AGENT` when risk is acceptable and ambiguities are clear.
-- Recommends `REQUEST_HUMAN_APPROVAL` for high-risk or ambiguous work.
+- generates a heuristic execution plan and likely affected files
+- opens a `plan` approval when risk or ambiguity requires it
 
 ### Implementation Agent
 
-- Is now a controlled workspace adapter with pluggable backend connectivity.
-- Inspects the active workspace diff, excluding `.openspec/runtime/**` and the active OpenSpec change scaffold.
-- Can apply runtime-controlled local actions returned by the backend:
-  - `write_file`
-  - `replace_in_file`
-  - `delete_file`
-  - `run_command`
-- Can route through:
-  - `manual`
-  - `openai_compatible`
-  - `command`
-  - `anthropic_native`
-  - `gemini_native`
-- Persists backend prompt/request/response artifacts when a backend is configured.
-- Persists workspace execution results, including touched files, executed commands, and blocked actions.
-- Reports changed files, tests added, task progress heuristics, and policy scope.
-- Escalates when file-count, diff-size, or high-risk path policy is exceeded.
-
-Current nuance:
-
-- hosted API modes can now change local files when they return `workspace_actions` and those actions pass runtime policy
-- `command` mode is the preferred path for local code-editing runners.
-- `anthropic_native` calls Anthropic Messages API directly.
-- `gemini_native` supports Gemini Developer API and Vertex AI / GCP bearer-token calls.
-- in Vertex auto mode, the runtime can resolve credentials from explicit token config, `GOOGLE_OAUTH_ACCESS_TOKEN`, `gcloud` ADC, or `gcloud` CLI login.
-- runtime-applied commands are restricted to a focused allowlist such as `node --test`, `vitest`, and `tsc --noEmit`
-- runtime-applied writes are blocked for `.git/**`, `.openspec/runtime/**`, and `openspec/changes/<active-change>/**`
+- is the main controlled workspace execution adapter
+- supports backend routing
+- persists backend prompt/request/response artifacts
+- applies governed local workspace actions
+- measures scope against a per-run baseline instead of the full dirty worktree
 
 ### Critic Agent
 
-- Reviews the implementation report against the plan and normalized context.
-- Flags blocking issues such as missing implementation, unresolved ambiguities, missing test coverage, or policy violations.
-- Produces `critic-report.json` and `critic-report.md`.
-- Can now route through dedicated reviewer backends, including Codex CLI and Gemini CLI command adapters, while keeping deterministic fallback findings.
+- reviews the implementation report against context and plan
+- keeps deterministic findings
+- can route through dedicated reviewer backends such as Codex CLI and Gemini CLI
 
 ### Validation Agent
 
-- Wraps the existing OpenSpec validator for change delta specs.
-- Adds runtime checks for critic approval and `tasks.md` completion.
-- Classifies results as:
+- wraps existing OpenSpec validation
+- adds runtime checks for critic approval and task completion
+- classifies:
   - `PASSED`
   - `RETRYABLE_IMPLEMENTATION_ERROR`
   - `SPEC_AMBIGUITY`
   - `ENVIRONMENT_FAILURE`
   - `REQUIRES_HUMAN_DECISION`
   - `NON_RECOVERABLE`
-- Produces `validation-result.json` and `validation-result.md`.
 
 ### Delivery Agent
 
-- Runs only after validation succeeds.
-- Produces closure summary, worklog preview, and Jira comment draft.
-- Produces archive decision data separate from validation output.
-- Under the current default `L2_ASSISTED` autonomy, it creates an archive approval requirement before closeout.
+- prepares closure evidence after validation succeeds
+- produces archive decision data
+- separates delivery readiness from archive execution
 
-### Approval Manager
+## OPSX Session Helpers Implemented Today
 
-- Persists approval artifacts under `.openspec/runtime/tickets/<ticket>/approvals/`.
-- Supports listing, accepting, and rejecting approvals from the CLI.
-- Updates runtime state when approvals are resolved.
-- Drives archive gating through runtime evidence instead of CLI-only conditions.
+- `osj opsx track explore --json`
+  exposes imported Jira ticket context and marks collaborative exploration.
+- `osj opsx track propose discovery --json`
+  marks the start of governed proposal/discovery work.
+- `osj opsx create-change <name>`
+  now prefers a session-aware orchestration path:
+  - writes `change-name-hint.json` when a name is provided
+  - orchestrates until `spec`
+  - restores the human interaction block after autonomous generation
+- `osj opsx track propose generation`
+  makes autonomous artifact generation explicit in timer evidence.
+- `osj opsx track propose review`
+  marks human+AI review after artifact generation.
 
-### OPSX Session Helpers
+## Example: Jira + OPSX + Root Spec
 
-- `osj opsx track explore --json` exposes imported Jira ticket context and, when the session is running, switches the active block to `human_agent_interaction / spec`.
-- `osj opsx track propose discovery --json` marks collaborative planning before artifact generation.
-- `osj opsx create-change <name>` prefers session-aware change creation, attaches the created change back to the active session, and uses autonomous `spec` tracking during generation when the session is running.
-- `osj opsx track propose generation` and `osj opsx track propose review` make the autonomous generation phase and the human/AI review phase explicit in timer evidence.
-- `sync_pending` sessions are intentionally blocked from `osj opsx create-change` until the developer recovers with `osj archive --retry` or discards with `osj timer cancel`.
-
-## Current Cycle Semantics
-
-- The runtime creates a new execution cycle when implementation starts after no prior cycle or after a terminal cycle.
-- The same cycle advances through implementation, critic, and validation.
-- Validation moves the cycle to:
-  - `PASSED`
-  - `FAILED_RETRYABLE`
-  - `FAILED_ESCALATED`
-- Delivery runs after the cycle is terminal and does not create a new execution cycle.
-
-```mermaid
-stateDiagram-v2
-    [*] --> QUEUED
-    QUEUED --> RUNNING: implementation
-    RUNNING --> UNDER_REVIEW: implementation_done
-    UNDER_REVIEW --> VALIDATING: critic_done
-    VALIDATING --> FAILED_RETRYABLE: retryable_failure
-    FAILED_RETRYABLE --> RUNNING: retry
-    VALIDATING --> FAILED_ESCALATED: approval_or_policy_stop
-    VALIDATING --> PASSED: validation_passed
+```bash
+osj purpose --jira PROJ-123 --import-ticket
+osj opsx track explore
+osj opsx track propose discovery
+osj opsx create-change autonomous-plan-for-feature-x
+osj opsx track propose generation
+osj orchestrate --until planning
+osj opsx track propose review
+osj orchestrate --until implementation
 ```
 
-## Archive Governance Implemented Today
+What this does:
 
-- If a runtime-managed change exists, `osj archive` now checks runtime delivery/approval state before archiving.
-- A pending archive approval blocks archive.
-- Missing delivery decision blocks archive for runtime-managed changes.
-- Worklog evidence remains conceptually separable from archive; archive can be blocked while time evidence is still allowed.
+1. imports the Jira ticket into the runtime session
+2. records collaborative discovery in timer evidence
+3. enters proposal discovery mode
+4. runs the discovery stack through `spec`
+5. expands change artifacts from the accepted root spec
+6. creates the plan
+7. transitions into governed implementation
+
+## Current Ticket States Used By The New Flow
+
+The runtime now actively uses these additional ticket states before `SPEC_READY`:
+
+- `DISCOVERY_IN_PROGRESS`
+- `ROOT_SPEC_REVIEW`
+
+In practice:
+
+- `DISCOVERY_IN_PROGRESS` means the runtime is gathering repo evidence and/or drafting the root spec
+- `ROOT_SPEC_REVIEW` means the root spec exists and is under automated review or waiting for clarification
 
 ## Current Limitations
 
-These are important and intentional:
+These are still important:
 
-- only `ImplementationAgent` consumes the shared backend registry today; the other agents still use local deterministic logic
-- hosted API backends do not get arbitrary filesystem access; they can only affect the repo through runtime-applied `workspace_actions` or through their own external tool runtime
-- `osj runtime graph` and `osj orchestrate --auto` are not implemented yet.
-- `osj runtime explain` exists, but its policy-budget and multi-cycle explanations can still get richer.
-- Event bus and telemetry persistence are still implicit or partial rather than formalized as dedicated modules.
-- `ContextAgent` does not yet use a system prompt to synthesize a structured SDD from a weak Jira description.
-- Archive governance is implemented, but Jira comment publication is still a draft/evidence step rather than a dedicated delivery-side integration module.
+- not every agent necessarily uses the shared backend registry in the same way
+- validation is still deterministic and not yet semantically enriched by a second review layer
+- runtime explain and telemetry can still become richer
+- local no-Jira fixture flows are weaker than Jira-backed flows
+- the discovery loop is implemented, but its analytics and telemetry are still simpler than the execution loop
 
-## What The Next PRs Should Do
+## What To Read Next
 
-The next meaningful runtime PRs should focus on operational maturity:
+Recommended order:
 
-1. deepen `osj runtime explain` and orchestration summaries around why the runtime stopped
-2. formalize event bus and telemetry persistence
-3. move more agents onto the shared backend registry where it adds real value
-4. deepen Jira-side delivery integration from draft artifacts into optional outbound actions
+1. [AGENTIC-FLOW](./AGENTIC-FLOW.md)
+2. [ARCHITECTURE](./ARCHITECTURE.md)
+3. [STATE-MACHINES](./STATE-MACHINES.md)
+4. [ROOT-SPEC-PROMPT](./ROOT-SPEC-PROMPT.md)
+5. [AGENT-BACKENDS](./AGENT-BACKENDS.md)

@@ -1,6 +1,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
-import { createChangeFromTicket } from '../../core/timer/ticket-change.js';
+import { createChangeFromRootSpec, createChangeFromTicket, parseStructuredSdd } from '../../core/timer/ticket-change.js';
+import { ArtifactManager } from '../../core/runtime/artifacts/ArtifactManager.js';
 import { saveActiveSession } from '../../core/timer/store.js';
 import type {
   Agent,
@@ -31,6 +32,7 @@ function toProjectRelative(projectRoot: string, filePath: string): string {
 
 export class SpecAgent implements Agent<NormalizedContext | undefined, SpecAgentOutput> {
   readonly name = 'spec_agent' as const;
+  private readonly artifactManager = new ArtifactManager();
 
   async canRun(context: AgentContext): Promise<boolean> {
     return context.envelope.constraints.canEditSpecs;
@@ -41,9 +43,19 @@ export class SpecAgent implements Agent<NormalizedContext | undefined, SpecAgent
     let changeName = context.timerSession.openspec_change?.name;
     const ticket = context.ticket;
     const projectRoot = context.projectRoot;
+    const rootSpecRef = this.artifactManager.getRootSpecRef(context.envelope.ticket_key);
+    const rootSpecMarkdown = await this.readMarkdownRef(rootSpecRef);
+    const changeNameHint = await this.artifactManager.readJsonRef<{ name?: string }>(
+      this.artifactManager.getChangeNameHintRef(context.envelope.ticket_key)
+    );
 
     if (!changeName) {
-      const created = await createChangeFromTicket(ticket);
+      const created = rootSpecMarkdown
+        ? await createChangeFromRootSpec(ticket, rootSpecMarkdown, {
+            name: changeNameHint?.name,
+            rootSpecPath: rootSpecRef,
+          })
+        : await createChangeFromTicket(ticket, { name: changeNameHint?.name });
       changeName = created.name;
       createdFiles.push(
         toProjectRelative(projectRoot, path.join(created.path, 'proposal.md')),
@@ -51,6 +63,9 @@ export class SpecAgent implements Agent<NormalizedContext | undefined, SpecAgent
         toProjectRelative(projectRoot, path.join(created.path, 'jira-ticket.md')),
         toProjectRelative(projectRoot, path.join(created.path, 'specs', created.name, 'spec.md')),
       );
+      if (rootSpecMarkdown) {
+        createdFiles.push(toProjectRelative(projectRoot, path.join(created.path, 'root-spec.md')));
+      }
 
       const updatedSession = {
         ...context.timerSession,
@@ -87,7 +102,11 @@ export class SpecAgent implements Agent<NormalizedContext | undefined, SpecAgent
       });
     }
 
-    const scenariosGenerated = input?.acceptance_criteria.length
+    const structuredRootSpec = rootSpecMarkdown
+      ? parseStructuredSdd(rootSpecMarkdown, ticket.summary || `Implement ${ticket.key}`)
+      : null;
+    const scenariosGenerated = structuredRootSpec?.acceptanceCriteria.length
+      ?? input?.acceptance_criteria.length
       ?? context.existingNormalizedContext?.acceptance_criteria.length
       ?? 0;
     const ambiguitiesRemaining = input?.ambiguities.length
@@ -106,5 +125,17 @@ export class SpecAgent implements Agent<NormalizedContext | undefined, SpecAgent
       artifact_refs: [],
       recommended_next_action: 'RUN_PLANNING_AGENT',
     };
+  }
+
+  private async readMarkdownRef(ref: string): Promise<string | null> {
+    const filePath = path.isAbsolute(ref) ? ref : path.join(this.artifactManager.getProjectRoot(), ref);
+    try {
+      return await fs.readFile(filePath, 'utf-8');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        return null;
+      }
+      throw error;
+    }
   }
 }

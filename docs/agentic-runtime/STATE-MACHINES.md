@@ -1,6 +1,6 @@
 # Agentic Runtime State Machines
 
-See also: [ARCHITECTURE](./ARCHITECTURE.md), [AUTONOMY-POLICY](./AUTONOMY-POLICY.md), [AGENT-CONTRACTS](./AGENT-CONTRACTS.md), [CURRENT-IMPLEMENTATION](./CURRENT-IMPLEMENTATION.md)
+See also: [AGENTIC-FLOW](./AGENTIC-FLOW.md), [ARCHITECTURE](./ARCHITECTURE.md), [AUTONOMY-POLICY](./AUTONOMY-POLICY.md), [AGENT-CONTRACTS](./AGENT-CONTRACTS.md), [CURRENT-IMPLEMENTATION](./CURRENT-IMPLEMENTATION.md)
 
 ## Purpose
 
@@ -28,7 +28,7 @@ The repository already persists:
 - `ExecutionCycleState`
 - `AgentRunState`
 
-The current slice actively advances cycle state through implementation, critic, validation, and delivery. Approval objects are now persisted; the remaining gap is a formal event-stream implementation.
+The current slice actively advances discovery, execution-cycle, approval, and delivery state. Approval objects are now persisted; the remaining gap is a formal event-stream implementation.
 
 ## 1. Ticket Runtime State
 
@@ -37,6 +37,8 @@ The current slice actively advances cycle state through implementation, critic, 
 ```text
 DISCOVERED
 CONTEXT_IMPORTED
+DISCOVERY_IN_PROGRESS
+ROOT_SPEC_REVIEW
 SPEC_READY
 PLANNED
 IN_EXECUTION
@@ -52,7 +54,11 @@ HUMAN_ESCALATION_REQUIRED
 stateDiagram-v2
     [*] --> DISCOVERED
     DISCOVERED --> CONTEXT_IMPORTED: import_ticket
-    CONTEXT_IMPORTED --> SPEC_READY: spec_generated
+    CONTEXT_IMPORTED --> DISCOVERY_IN_PROGRESS: context_normalized
+    DISCOVERY_IN_PROGRESS --> ROOT_SPEC_REVIEW: root_spec_drafted
+    ROOT_SPEC_REVIEW --> DISCOVERY_IN_PROGRESS: technical_tbd_loop
+    ROOT_SPEC_REVIEW --> HUMAN_ESCALATION_REQUIRED: business_clarification_needed
+    ROOT_SPEC_REVIEW --> SPEC_READY: spec_generated
     SPEC_READY --> PLANNED: plan_generated
     PLANNED --> IN_EXECUTION: implementation_started
     IN_EXECUTION --> UNDER_REVIEW: implementation_completed
@@ -71,6 +77,8 @@ stateDiagram-v2
 - This state supplements Jira status; it does not replace it.
 - A ticket can be `IN_EXECUTION` in the runtime while Jira still says `In Progress`.
 - `READY_FOR_ARCHIVE` means the runtime sees the work as closeable, not that archive already happened.
+- `DISCOVERY_IN_PROGRESS` means the runtime is gathering repository evidence and/or drafting the root spec.
+- `ROOT_SPEC_REVIEW` means the root spec exists and is under automated review, clarification, or root-spec approval gating.
 
 ## 2. Session Runtime State
 
@@ -236,6 +244,9 @@ Minimum guards to implement from day one:
 | Transition | Guard |
 | --- | --- |
 | `SPEC_READY -> PLANNED` | normalized context and required OpenSpec artifacts exist |
+| `CONTEXT_IMPORTED -> DISCOVERY_IN_PROGRESS` | context artifacts exist and no blocking approval is pending |
+| `DISCOVERY_IN_PROGRESS -> ROOT_SPEC_REVIEW` | project evidence exists and a root spec draft was produced |
+| `ROOT_SPEC_REVIEW -> SPEC_READY` | root spec review passed and any required root-spec approval is resolved |
 | `PLANNED -> IN_EXECUTION` | no blocking approval is pending |
 | `UNDER_REVIEW -> READY_FOR_ARCHIVE` | validation passed and required tasks are complete |
 | `ACTIVE -> SYNC_PENDING` | at least one Jira sync side effect failed after close/archive attempt |
@@ -256,6 +267,10 @@ Every state transition should emit one event. At minimum:
 - `OPSX_TRACKED`
 - `CHANGE_CREATED`
 - `CONTEXT_NORMALIZED`
+- `PROJECT_EVIDENCE_CAPTURED`
+- `ROOT_SPEC_AUTHORED`
+- `ROOT_SPEC_REVIEWED`
+- `ROOT_SPEC_APPROVAL_REQUESTED`
 - `SPEC_GENERATED`
 - `PLAN_GENERATED`
 - `AGENT_RUN_STARTED`

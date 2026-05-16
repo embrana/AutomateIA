@@ -93,8 +93,15 @@ The system produces an execution plan before implementation.
     const orchestrator = new AgentOrchestrator();
     const results = await orchestrator.orchestrateUntil('planning');
 
-    expect(results).toHaveLength(3);
-    expect(results.map((item) => item.agent)).toEqual(['context_agent', 'spec_agent', 'planning_agent']);
+    expect(results).toHaveLength(6);
+    expect(results.map((item) => item.agent)).toEqual([
+      'context_agent',
+      'project_evidence_resolver_agent',
+      'root_spec_author_agent',
+      'root_spec_critic_agent',
+      'spec_agent',
+      'planning_agent',
+    ]);
     expect(results.every((item) => item.status === 'SUCCEEDED')).toBe(true);
 
     const runtimeStore = new RuntimeStore();
@@ -106,6 +113,7 @@ The system produces an execution plan before implementation.
 
     const changeName = sessionRuntime!.change_name!;
     const contextArtifact = path.join(tempDir, '.openspec', 'runtime', 'tickets', 'PROJ-123', 'context', 'normalized-context.json');
+    const rootSpecArtifact = path.join(tempDir, '.openspec', 'runtime', 'tickets', 'PROJ-123', 'discovery', 'root-spec.md');
     const planningArtifact = path.join(tempDir, '.openspec', 'runtime', 'tickets', 'PROJ-123', 'changes', changeName, 'planning', 'execution-plan.json');
     const changeSpec = path.join(tempDir, 'openspec', 'changes', changeName, 'specs', changeName, 'spec.md');
 
@@ -116,6 +124,7 @@ The system produces an execution plan before implementation.
       objective: 'Implement runtime-aware planning flow',
       test_strategy: ['unit_tests', 'integration_tests', 'openspec_validate'],
     });
+    expect(await fs.readFile(rootSpecArtifact, 'utf-8')).toContain('# SPEC:');
     expect(await fs.readFile(changeSpec, 'utf-8')).toContain('## ADDED Requirements');
   });
 
@@ -448,6 +457,9 @@ The runtime persists a prompt artifact for the implementation step.
 
     expect(results.map((item) => item.agent)).toEqual([
       'context_agent',
+      'project_evidence_resolver_agent',
+      'root_spec_author_agent',
+      'root_spec_critic_agent',
       'spec_agent',
       'planning_agent',
       'implementation_agent',
@@ -855,6 +867,9 @@ Implementation can run a focused test command after applying the edits.
 
     expect(results.map((item) => item.agent)).toEqual([
       'context_agent',
+      'project_evidence_resolver_agent',
+      'root_spec_author_agent',
+      'root_spec_critic_agent',
       'spec_agent',
       'planning_agent',
       'implementation_agent',

@@ -307,11 +307,14 @@ export class SessionManager {
       return previous;
     }
     if (
-      previous === 'PLANNED'
+      previous === 'SPEC_READY'
+      || previous === 'PLANNED'
       || previous === 'IN_EXECUTION'
       || previous === 'UNDER_REVIEW'
       || previous === 'VALIDATION_FAILED'
       || previous === 'READY_FOR_ARCHIVE'
+      || previous === 'DISCOVERY_IN_PROGRESS'
+      || previous === 'ROOT_SPEC_REVIEW'
       || previous === 'HUMAN_ESCALATION_REQUIRED'
     ) {
       return previous;

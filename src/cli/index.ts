@@ -580,12 +580,18 @@ opsxCmd
 
 agentCmd
   .command('run <agent>')
-  .description('Run a runtime agent: context, spec, planning, implementation, critic, validation, delivery')
+  .description('Run a runtime agent: context, project-evidence, root-spec, root-spec-review, spec, planning, implementation, critic, validation, delivery')
   .action(async (agent: string) => {
     try {
       const normalized = agent.trim().toLowerCase();
       const map = {
         context: 'context_agent',
+        'project-evidence': 'project_evidence_resolver_agent',
+        projectevidence: 'project_evidence_resolver_agent',
+        'root-spec': 'root_spec_author_agent',
+        rootspec: 'root_spec_author_agent',
+        'root-spec-review': 'root_spec_critic_agent',
+        rootspecreview: 'root_spec_critic_agent',
         spec: 'spec_agent',
         planning: 'planning_agent',
         implementation: 'implementation_agent',
@@ -594,7 +600,7 @@ agentCmd
         delivery: 'delivery_agent',
       } as const;
       if (!(normalized in map)) {
-        throw new Error(`Unknown agent '${agent}'. Use one of: context, spec, planning, implementation, critic, validation, delivery.`);
+        throw new Error(`Unknown agent '${agent}'. Use one of: context, project-evidence, root-spec, root-spec-review, spec, planning, implementation, critic, validation, delivery.`);
       }
       const summary = await agentOrchestrator.runAgent(map[normalized as keyof typeof map]);
       printAgentExecutionSummary(summary);
@@ -607,12 +613,15 @@ agentCmd
 
 orchestrateCmd
   .option('--from-session', 'Run orchestration using the active runtime session')
-  .option('--until <stage>', 'Run until stage: context, spec, planning, implementation, critic, validation, delivery', 'planning')
+  .option('--until <stage>', 'Run until stage: context, project-evidence, root-spec, root-spec-review, spec, planning, implementation, critic, validation, delivery', 'planning')
   .action(async (options: { fromSession?: boolean; until?: string }) => {
     try {
       const until = (options.until ?? 'planning').trim().toLowerCase();
       if (
         until !== 'context'
+        && until !== 'project-evidence'
+        && until !== 'root-spec'
+        && until !== 'root-spec-review'
         && until !== 'spec'
         && until !== 'planning'
         && until !== 'implementation'
@@ -620,7 +629,7 @@ orchestrateCmd
         && until !== 'validation'
         && until !== 'delivery'
       ) {
-        throw new Error(`Unsupported --until value '${options.until}'. Use context, spec, planning, implementation, critic, validation, or delivery.`);
+        throw new Error(`Unsupported --until value '${options.until}'. Use context, project-evidence, root-spec, root-spec-review, spec, planning, implementation, critic, validation, or delivery.`);
       }
       const heartbeatMonitor = new OrchestrateHeartbeatMonitor(process.cwd());
       heartbeatMonitor.start();

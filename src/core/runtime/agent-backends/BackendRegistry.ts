@@ -4,7 +4,7 @@ import type { GlobalConfig } from '../../global-config.js';
 import type { AgentBackend } from './AgentBackend.js';
 import type { AgentBackendRoutingConfig } from './config.js';
 import type { ResolvedAgentBackend, AgentInvocationRequest, AgentInvocationResult } from './types.js';
-import { routeKeyForAgentName } from './routes.js';
+import { routeKeysForAgentName } from './routes.js';
 import { ManualAgentBackend } from './backends/ManualAgentBackend.js';
 import { OpenAICompatibleAgentBackend } from './backends/OpenAICompatibleAgentBackend.js';
 import { CommandAgentBackend } from './backends/CommandAgentBackend.js';
@@ -27,15 +27,21 @@ export class AgentBackendRegistry {
     };
   }
 
-  resolveForAgent(agentName: AgentName): ResolvedAgentBackend | null {
+  resolveForAgent(
+    agentName: AgentName,
+    options: { allowDefaultFallback?: boolean } = {}
+  ): ResolvedAgentBackend | null {
     const config = this.configProvider();
     const routing = config.agents;
     if (!routing) {
       return null;
     }
 
-    const routeKey = routeKeyForAgentName(agentName);
-    const backendName = (routeKey ? routing.routing?.[routeKey] : undefined) ?? routing.default_backend;
+    const routeKeys = routeKeysForAgentName(agentName);
+    const backendName = routeKeys
+      .map((routeKey) => routing.routing?.[routeKey])
+      .find((value): value is string => Boolean(value))
+      ?? (options.allowDefaultFallback === false ? undefined : routing.default_backend);
     if (!backendName) {
       return null;
     }

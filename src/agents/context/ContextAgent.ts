@@ -168,7 +168,7 @@ export class ContextAgent implements Agent<void, ContextAgentOutput> {
       },
       artifact_refs: [],
       human_questions: normalizedContext.ambiguities,
-      recommended_next_action: 'RUN_SPEC_AGENT',
+      recommended_next_action: 'RUN_PROJECT_EVIDENCE_RESOLVER_AGENT',
     };
   }
 }

@@ -12,6 +12,8 @@ export type AutonomyLevel =
 export type TicketRuntimeState =
   | 'DISCOVERED'
   | 'CONTEXT_IMPORTED'
+  | 'DISCOVERY_IN_PROGRESS'
+  | 'ROOT_SPEC_REVIEW'
   | 'SPEC_READY'
   | 'PLANNED'
   | 'IN_EXECUTION'
@@ -65,7 +67,7 @@ export type AgentRunState =
 export type ValidationStatus = 'PENDING' | 'PASSED' | 'FAILED' | 'BLOCKED';
 export type RuntimeActivityMode = TimerActorMode | 'none';
 export type RuntimeWorkKind = TimerWorkKind | 'none';
-export type ApprovalScope = 'plan' | 'implementation' | 'archive' | 'jira_comment' | 'recovery';
+export type ApprovalScope = 'root_spec' | 'plan' | 'implementation' | 'archive' | 'jira_comment' | 'recovery';
 export type ApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXPIRED';
 
 export interface RuntimeFileBase {

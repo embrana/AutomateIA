@@ -1,6 +1,8 @@
 import { getActiveSession } from '../../core/timer/store.js';
 import type { ImportedJiraTicket, TimerActorMode, TimerSession, TimerWorkKind } from '../../core/timer/types.js';
 import { switchRunningSessionBlock } from '../../core/timer/commands.js';
+import { ArtifactManager } from '../../core/runtime/artifacts/ArtifactManager.js';
+import { AgentOrchestrator } from '../../core/runtime/orchestration/AgentOrchestrator.js';
 import { newChangeCommand } from './new-change.js';
 
 export type OpsxWorkflow = 'explore' | 'propose';
@@ -190,6 +192,7 @@ export async function createTrackedOpsxChange(
   name: string | undefined,
   options: OpsxCreateChangeOptions = {}
 ): Promise<void> {
+  const artifactManager = new ArtifactManager();
   const activeSession = await getActiveSession();
   if (activeSession?.status === 'sync_pending') {
     throw new Error(
@@ -215,10 +218,29 @@ export async function createTrackedOpsxChange(
       }));
     }
 
-    await newChangeCommand(name, {
-      schema: options.schema,
-      fromSession: useSession,
-    });
+    if (useSession && activeSession?.jira_ticket) {
+      if (name?.trim()) {
+        await artifactManager.writeTicketJson(activeSession.jira_issue_key, 'discovery', 'change-name-hint.json', {
+          name: name.trim(),
+        });
+      }
+      const orchestrator = new AgentOrchestrator();
+      const results = await orchestrator.orchestrateUntil('spec');
+      if (results.length === 0) {
+        console.log('No OPSX change artifacts were created because the runtime is blocked by a prior approval or already beyond spec generation.');
+      } else {
+        for (const summary of results) {
+          console.log(`Agent: ${summary.agent}`);
+          console.log(`Status: ${summary.status}`);
+          console.log(`Next action: ${summary.recommended_next_action}`);
+        }
+      }
+    } else {
+      await newChangeCommand(name, {
+        schema: options.schema,
+        fromSession: useSession,
+      });
+    }
 
     if (autoBlockStarted) {
       await switchRunningSessionBlock({

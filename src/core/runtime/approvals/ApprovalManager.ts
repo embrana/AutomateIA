@@ -269,6 +269,8 @@ export class ApprovalManager {
     if (approval.status === 'APPROVED') {
       if (approval.scope === 'archive') {
         nextState = 'READY_FOR_ARCHIVE';
+      } else if (approval.scope === 'root_spec') {
+        nextState = 'DISCOVERY_IN_PROGRESS';
       } else if (approval.scope === 'plan') {
         nextState = 'PLANNED';
       } else {
